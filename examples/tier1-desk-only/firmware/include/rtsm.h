@@ -15,6 +15,7 @@
 #ifndef RTSM_H
 #define RTSM_H
 
+#include "nvstate.h"
 #include "payload.h"
 #include "queue.h"
 #include "rlog.h"
@@ -50,6 +51,23 @@
 #endif
 #ifndef RTSM_BACKOFF_MAX_S
 #define RTSM_BACKOFF_MAX_S 600u
+#endif
+/* Long back-off for status/data sends while the link state is unknown and
+ * sends keep failing (R-9): retry after 10, 20, 40, 80, 120 min, then every
+ * 120 min. Any successful uplink resets it. Alarms are not subject to it. */
+#ifndef RTSM_DATA_BACKOFF_FIRST_S
+#define RTSM_DATA_BACKOFF_FIRST_S 600u
+#endif
+#ifndef RTSM_DATA_BACKOFF_MAX_S
+#define RTSM_DATA_BACKOFF_MAX_S 7200u
+#endif
+/* Seq block reservation: NV holds seq + this; written again when reached. */
+#ifndef RTSM_NV_SEQ_BLOCK
+#define RTSM_NV_SEQ_BLOCK 256u
+#endif
+/* Persist the cumulative energy counter after this much consumption. */
+#ifndef RTSM_NV_ENERGY_STEP_MAH
+#define RTSM_NV_ENERGY_STEP_MAH 50u
 #endif
 #ifndef RTSM_BACKLOG_MAX_PER_TICK
 #define RTSM_BACKLOG_MAX_PER_TICK 6u /* back-fill messages per 10-min tick */
@@ -97,13 +115,15 @@ typedef enum {
     RTSM_DL_REJECTED      /* malformed, invalid config or wrong unlock token */
 } rtsm_dl_result_t;
 
-/* Identity / provisioning data, normally from the factory NV area. */
+/* Identity / provisioning data, normally from the factory NV area.
+ * reset_count, seq, config, state and the active unlock token are kept by
+ * the core itself in nvstate (hal->nv_read / nv_write). */
 typedef struct {
     rtsm_sku_t sku;
     uint8_t hw_rev;
     uint16_t fw_version;
-    uint8_t reset_count;   /* maintained by the boot code */
-    uint16_t initial_seq;  /* persisted seq counter from the previous run */
+    /* Factory default token: used only when nvstate holds no valid record
+     * (first boot or both slots corrupt); afterwards the NV copy rules. */
     uint8_t unlock_token[PL_TOKEN_LEN];
 } rtsm_init_t;
 
@@ -135,6 +155,10 @@ typedef struct {
     uint16_t backoff_s;
     bool tx_kick;           /* new alarm: try now */
     uint8_t tx_fail_count;  /* since last status message, saturating */
+    uint32_t data_backoff_s;/* long status/data back-off, 0 = none */
+    uint32_t data_next_ok;  /* no status/data attempt before this (link unknown) */
+    uint32_t send_attempts_total;
+    uint32_t send_failures_total;
     uint8_t backlog_budget; /* back-fill messages left in this tick */
     uint32_t pending_from;  /* records >= this abs are not yet due (LTE-M) */
     bool data_link_lost;    /* last data attempt failed: next tick sends newest first */
@@ -159,6 +183,10 @@ typedef struct {
     bool sent_move;
     bool sent_detach;
 
+    /* Persistence (R-9) */
+    nvs_t nv;
+    uint32_t energy_base;   /* cumulative mAh before this boot (from NV) */
+
     rlog_t log;
     mq_t q_alarm;
     mq_t q_status;
@@ -174,6 +202,11 @@ rtsm_dl_result_t rtsm_on_downlink(rtsm_t *r, const uint8_t *buf, size_t len);
  * lid and downlink interrupts must also wake the MCU. */
 uint32_t rtsm_next_wakeup(const rtsm_t *r);
 uint32_t rtsm_device_time(const rtsm_t *r);
+
+/* Replace the unlock token (provisioning / rotation); persisted at once. */
+void rtsm_set_unlock_token(rtsm_t *r, const uint8_t token[PL_TOKEN_LEN]);
+/* Cumulative energy: NV total from earlier boots + HAL counter (mAh). */
+uint32_t rtsm_energy_total(const rtsm_t *r);
 
 /* D-13 rail lag compensation (exposed for unit tests):
  * raw + RAIL_TAU_COMP_S * (raw - prev) / dt, rounded to nearest, only when

@@ -19,18 +19,25 @@ static const uint8_t TOKEN[8] = { 0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04
 
 /* ---- Harness ------------------------------------------------------------ */
 
+static rtsm_init_t g_in;
+
 static void setup(rtsm_sku_t sku)
 {
-    rtsm_init_t in;
-    memset(&in, 0, sizeof in);
-    in.sku = sku;
-    in.hw_rev = 2;
-    in.fw_version = 0x0102;
-    in.reset_count = 1;
-    in.initial_seq = 0;
-    memcpy(in.unlock_token, TOKEN, sizeof TOKEN);
+    memset(&g_in, 0, sizeof g_in);
+    g_in.sku = sku;
+    g_in.hw_rev = 2;
+    g_in.fw_version = 0x0102;
+    memcpy(g_in.unlock_token, TOKEN, sizeof TOKEN);
     sim_init(&S, T0);
-    rtsm_init(&R, &S.hal, &in);
+    rtsm_init(&R, &S.hal, &g_in);
+}
+
+/* MCU reset (battery pull / watchdog): RAM is lost, the sim's flash (log
+ * and nvstate slots), clock and captured messages are kept. */
+static void reboot(uint32_t downtime_s)
+{
+    S.now += downtime_s;
+    rtsm_init(&R, &S.hal, &g_in);
 }
 
 static void advance(uint32_t secs)
@@ -916,6 +923,422 @@ static void t_next_wakeup(void)
     CHECK(rtsm_next_wakeup(&R) == R.anchor + TICK);
 }
 
+/* ======================================================================== */
+/* R-9: persistence across reset (nvstate)                                  */
+/* ======================================================================== */
+
+static uint8_t seq_seen[65536u / 8u];
+
+/* Number of captured uplinks whose seq was already used by an earlier one. */
+static uint32_t seq_reuse_count(void)
+{
+    uint32_t i, reuse = 0;
+    memset(seq_seen, 0, sizeof seq_seen);
+    for (i = 0; i < S.nmsg; i++) {
+        uint16_t q = be16(msg(i)->buf + 1);
+        uint8_t bit = (uint8_t)(1u << (q & 7u));
+        if (seq_seen[q >> 3] & bit) reuse++;
+        seq_seen[q >> 3] |= bit;
+    }
+    return reuse;
+}
+
+/* How many accepted batch slots carry the record with timestamp t. */
+static uint32_t times_delivered(uint32_t t)
+{
+    uint32_t i, c = 0;
+    for (i = 0; i < S.nmsg; i++) {
+        uint32_t b;
+        if (mtype(i) != PL_T_BATCH) continue;
+        b = batch_base(i);
+        if (t >= b && (t - b) % TICK == 0u && (t - b) / TICK < batch_n(i)) c++;
+    }
+    return c;
+}
+
+/* Every logged record delivered exactly once (LTE-M), or once or twice
+ * (LoRa: the deliberate n=2 "previous" repeat). */
+static uint32_t delivery_violations(void)
+{
+    uint32_t i, viol = 0;
+    rtsm_log_entry_t e;
+    for (i = R.log.first; i < R.log.next; i++) {
+        uint32_t c;
+        if (!rlog_get(&R.log, i, &e)) {
+            viol++;
+            continue;
+        }
+        c = times_delivered(e.time);
+        if (R.id.sku == RTSM_SKU_LTEM ? c != 1u : (c < 1u || c > 2u)) viol++;
+    }
+    return viol;
+}
+
+static bool cfg_equal(const pl_config_t *a, const pl_config_t *b)
+{
+    uint8_t x[PL_CONFIG_SIZE], y[PL_CONFIG_SIZE];
+    (void)pl_encode_config(x, sizeof x, a);
+    (void)pl_encode_config(y, sizeof y, b);
+    return memcmp(x, y, sizeof x) == 0;
+}
+
+static void t_nv_record_unit(void)
+{
+    static const uint8_t check[9] = { '1', '2', '3', '4', '5', '6', '7', '8', '9' };
+    nvs_data_t d, o;
+    uint8_t buf[NVS_RECORD_SIZE];
+    uint32_t gen = 0;
+    pl_config_t c = std_cfg();
+
+    CHECK(nvs_crc32(check, sizeof check) == 0xCBF43926u); /* CRC-32 check value */
+    nvs_defaults(&d, TOKEN);
+    d.state_class = NVS_CLASS_LOCKED;
+    d.have_config = true;
+    (void)pl_encode_config(d.config, sizeof d.config, &c);
+    d.reset_count = 0x1234u;
+    d.seq_reserved = 0xFFF0u;
+    d.energy_mAh = 70000u;
+    nvs_encode(&d, 0xA0B0C0D0u, buf);
+    CHECK(nvs_decode(buf, &o, &gen));
+    CHECK(gen == 0xA0B0C0D0u);
+    CHECK_EQ(o.state_class, NVS_CLASS_LOCKED);
+    CHECK(o.have_config);
+    CHECK(memcmp(o.config, d.config, PL_CONFIG_SIZE) == 0);
+    CHECK(memcmp(o.token, TOKEN, PL_TOKEN_LEN) == 0);
+    CHECK_EQ(o.reset_count, 0x1234);
+    CHECK_EQ(o.seq_reserved, 0xFFF0);
+    CHECK(o.energy_mAh == 70000u);
+    buf[30] ^= 0x10u; /* one bit flipped in the token */
+    CHECK(!nvs_decode(buf, &o, &gen));
+    memset(buf, 0xFF, sizeof buf); /* erased */
+    CHECK(!nvs_decode(buf, &o, &gen));
+}
+
+/* Reset in the middle of RUN (LTE-M, between batch boundaries): RUN and the
+ * config come back, the log is back-filled exactly once, no seq is reused. */
+static void t_nv_reset_resumes_run(void)
+{
+    pl_config_t c = std_cfg();
+    uint32_t i, n_pre;
+    uint16_t max_seq_pre = 0;
+    int32_t st = -1;
+    setup(RTSM_SKU_LTEM);
+    CHECK_EQ(R.nv.d.reset_count, 1);   /* first boot from blank flash */
+    CHECK_EQ(R.nv.boot_slot, NVS_NO_SLOT);
+    commission_and_run();
+    CHECK_EQ(R.nv.d.state_class, NVS_CLASS_RUN);
+    CHECK(R.nv.d.have_config);
+    for (i = 0; i < 6u * 5u + 2u; i++) tick();
+    S.energy = 200; /* +80 mAh since boot: energy step written */
+    tick();
+    CHECK(R.nv.d.energy_mAh == 200u);
+    CHECK(rlog_count_unsent(&R.log) >= 3u); /* waiting for the next hour */
+    n_pre = S.nmsg;
+    for (i = 0; i < n_pre; i++) {
+        if (be16(msg(i)->buf + 1) > max_seq_pre) max_seq_pre = be16(msg(i)->buf + 1);
+    }
+    CHECK(max_seq_pre < RTSM_NV_SEQ_BLOCK);
+
+    S.energy = 0; /* the coulomb counter restarts with the MCU */
+    reboot(137);  /* off the 10-min grid on purpose */
+    CHECK_EQ(R.state, RTSM_RUN);
+    CHECK(R.have_config);
+    CHECK(cfg_equal(&R.cfg, &c));
+    CHECK_EQ(R.nv.d.reset_count, 2);
+    CHECK(R.nv.boot_slot != NVS_NO_SLOT);
+    CHECK(rlog_count_unsent(&R.log) >= 3u); /* log recovered */
+    for (i = 0; i < 144u; i++) tick();
+
+    /* First uplink after the reset: status with reset_count 2, energy kept,
+     * seq resumed at the reservation. */
+    CHECK(S.nmsg > n_pre);
+    if (S.nmsg > n_pre) {
+        st = (int32_t)n_pre;
+        CHECK_EQ(mtype((uint32_t)st), PL_T_STATUS);
+        CHECK_EQ(be16(msg((uint32_t)st)->buf + 1), RTSM_NV_SEQ_BLOCK);
+        CHECK_EQ(msg((uint32_t)st)->buf[12], 2);
+        CHECK_EQ(be16(msg((uint32_t)st)->buf + 8), 200);
+    }
+    CHECK_EQ(R.state, RTSM_RUN);
+    CHECK_EQ(seq_reuse_count(), 0);
+    CHECK_EQ(rlog_count_unsent(&R.log), 0);
+    CHECK_EQ(delivery_violations(), 0);
+}
+
+/* Seq block reservation across several blocks, then a reset: the seq
+ * resumes at the reservation (a gap, never a reuse). */
+static void t_nv_seq_reservation(void)
+{
+    uint32_t i, n_pre, w0;
+    uint16_t last_pre, reserved;
+    setup(RTSM_SKU_LORA);
+    commission_and_run();
+    w0 = S.nv_writes;
+    for (i = 0; i < 4u * 144u; i++) tick(); /* ~580 uplinks: 2 more blocks */
+    CHECK_EQ(S.nv_writes - w0, 2);
+    n_pre = S.nmsg;
+    last_pre = be16(msg(n_pre - 1u)->buf + 1);
+    reserved = R.nv.d.seq_reserved;
+    CHECK((uint16_t)(reserved - last_pre) >= 1u);
+    CHECK((uint16_t)(reserved - last_pre) <= RTSM_NV_SEQ_BLOCK);
+    reboot(30);
+    for (i = 0; i < 6u; i++) tick();
+    CHECK(S.nmsg > n_pre);
+    CHECK_EQ(be16(msg(n_pre)->buf + 1), reserved);
+    CHECK_EQ(seq_reuse_count(), 0);
+}
+
+/* Reset in LOCKED stays LOCKED (pulling the battery does not unlock a
+ * stolen unit); the persisted token still unlocks it. */
+static void t_nv_reset_locked(void)
+{
+    pl_config_t c = std_cfg();
+    uint32_t before, logn, i;
+    setup(RTSM_SKU_LORA);
+    commission_and_run();
+    tick();
+    S.lid = false;
+    advance(1);
+    CHECK_EQ(R.state, RTSM_LOCKED);
+    CHECK_EQ(R.nv.d.state_class, NVS_CLASS_LOCKED);
+    S.lid = true; /* thief closes the lid, pulls the battery, re-inserts it */
+    logn = rlog_count(&R.log);
+    before = S.nmsg;
+    reboot(3600);
+    CHECK_EQ(R.state, RTSM_LOCKED);
+    advance(7u * 3600u);
+    CHECK_EQ(R.state, RTSM_LOCKED);
+    CHECK_EQ(rlog_count(&R.log), logn); /* no sampling */
+    CHECK_EQ(S.nmsg - before, 2);        /* boot beacon + 6-h beacon */
+    for (i = before; i < S.nmsg; i++) CHECK_EQ(mtype(i), PL_T_STATUS);
+    CHECK_EQ(send_cfg(&c), RTSM_DL_IGNORED);
+    reboot(10);
+    CHECK_EQ(R.state, RTSM_LOCKED);
+    CHECK_EQ(send_unlock(TOKEN), RTSM_DL_APPLIED);
+    CHECK_EQ(R.state, RTSM_COMMISSION);
+    CHECK_EQ(R.nv.d.state_class, NVS_CLASS_SHIP);
+    CHECK(!R.nv.d.have_config);
+    reboot(10); /* unlocked but not yet configured: back to SHIP */
+    CHECK_EQ(R.state, RTSM_SHIP);
+    CHECK(!R.have_config);
+    CHECK_EQ(seq_reuse_count(), 0);
+}
+
+/* Token rotation is persisted; service-mode SHIP survives a reset. */
+static void t_nv_token_and_service(void)
+{
+    static const uint8_t TOK2[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    uint32_t w;
+    setup(RTSM_SKU_LORA);
+    commission_and_run();
+    w = S.nv_writes;
+    rtsm_set_unlock_token(&R, TOK2);
+    CHECK_EQ(S.nv_writes - w, 1);
+    rtsm_set_unlock_token(&R, TOK2); /* unchanged: no write */
+    CHECK_EQ(S.nv_writes - w, 1);
+    reboot(5);
+    CHECK_EQ(R.state, RTSM_RUN);
+    S.lid = false;
+    advance(1);
+    CHECK_EQ(R.state, RTSM_LOCKED);
+    S.lid = true;
+    reboot(5);
+    CHECK_EQ(send_unlock(TOKEN), RTSM_DL_REJECTED); /* factory token replaced */
+    CHECK_EQ(send_unlock(TOK2), RTSM_DL_APPLIED);
+
+    /* Service SHIP while still on the rail: a reset must not re-commission. */
+    setup(RTSM_SKU_LORA);
+    commission_and_run();
+    CHECK_EQ(send_service(PL_SERVICE_SHIP), RTSM_DL_APPLIED);
+    CHECK_EQ(R.nv.d.state_class, NVS_CLASS_SHIP_SERVICE);
+    reboot(5);
+    CHECK_EQ(R.state, RTSM_SHIP);
+    advance(600);
+    CHECK_EQ(R.state, RTSM_SHIP); /* still attached, not re-armed */
+    S.hall = false;
+    advance(1);
+    CHECK_EQ(R.nv.d.state_class, NVS_CLASS_SHIP);
+    S.hall = true;
+    advance(RTSM_ATTACH_DEBOUNCE_S + 1u);
+    CHECK_EQ(R.state, RTSM_COMMISSION);
+}
+
+/* Make slot A hold the newest record (B the previous one) by rotating the
+ * token; returns with both slots valid. */
+static void newest_in_slot_a(void)
+{
+    static const uint8_t TOK2[8] = { 9, 9, 9, 9, 9, 9, 9, 2 };
+    static const uint8_t TOK3[8] = { 9, 9, 9, 9, 9, 9, 9, 3 };
+    rtsm_set_unlock_token(&R, TOK2);
+    if (R.nv.active_slot != NVS_SLOT_A) {
+        rtsm_set_unlock_token(&R, TOK3);
+    }
+}
+
+static void t_nv_corrupt_a_uses_b(void)
+{
+    pl_config_t c = std_cfg();
+    nvs_data_t a, b;
+    nvs_t probe;
+    uint32_t ga = 0, gb = 0;
+    setup(RTSM_SKU_LTEM);
+    commission_and_run();
+    tick();
+    newest_in_slot_a();
+    CHECK(nvs_decode(S.nv[0], &a, &ga));
+    CHECK(nvs_decode(S.nv[1], &b, &gb));
+    CHECK(ga == gb + 1u);
+    nvs_load(&probe, &S.hal, TOKEN); /* highest generation wins */
+    CHECK_EQ(probe.active_slot, NVS_SLOT_A);
+    CHECK(memcmp(probe.d.token, a.token, PL_TOKEN_LEN) == 0);
+
+    S.nv[0][20] ^= 0x04u; /* bit rot in slot A */
+    reboot(60);
+    CHECK_EQ(R.nv.boot_slot, NVS_SLOT_B);
+    CHECK_EQ(R.state, RTSM_RUN);
+    CHECK(R.have_config);
+    CHECK(cfg_equal(&R.cfg, &c));
+    CHECK(memcmp(R.nv.d.token, b.token, PL_TOKEN_LEN) == 0);
+    CHECK_EQ(R.nv.d.reset_count, b.reset_count + 1u);
+    CHECK_EQ(R.nv.active_slot, NVS_SLOT_A); /* boot record rewrote slot A */
+    CHECK(nvs_decode(S.nv[0], &a, &ga));
+    CHECK(ga == gb + 1u);
+}
+
+static void t_nv_both_corrupt_defaults(void)
+{
+    setup(RTSM_SKU_LTEM);
+    commission_and_run();
+    tick();
+    newest_in_slot_a();
+    S.nv[0][5] ^= 0x01u;
+    S.nv[1][40] ^= 0x80u;
+    reboot(60);
+    CHECK_EQ(R.nv.boot_slot, NVS_NO_SLOT);
+    CHECK_EQ(R.state, RTSM_SHIP);
+    CHECK(!R.have_config);
+    CHECK_EQ(R.nv.d.state_class, NVS_CLASS_SHIP);
+    CHECK(memcmp(R.nv.d.token, TOKEN, PL_TOKEN_LEN) == 0); /* factory token */
+    CHECK_EQ(R.nv.d.reset_count, 1);
+    CHECK_EQ(R.seq, 0);
+    /* The unit is still on the rail: it re-commissions and needs config. */
+    advance(RTSM_ATTACH_DEBOUNCE_S + 1u);
+    CHECK_EQ(R.state, RTSM_COMMISSION);
+}
+
+/* Flash wear in steady operation over 30 days (link up, rail 30 degC,
+ * energy rising ~5 mAh/day). Returns writes in the 30 days. */
+static uint32_t wear_scenario(rtsm_sku_t sku, uint32_t *uplinks)
+{
+    uint32_t i, w0, m0;
+    setup(sku);
+    commission_and_run();
+    for (i = 0; i < 144u; i++) tick();
+    w0 = S.nv_writes;
+    m0 = S.nmsg;
+    for (i = 0; i < 30u * 144u; i++) {
+        if (i % 29u == 0u) S.energy++;
+        tick();
+    }
+    *uplinks = S.nmsg - m0;
+    CHECK_EQ(R.nv.write_failures, 0);
+    return S.nv_writes - w0;
+}
+
+static void t_nv_flash_wear(void)
+{
+    uint32_t up_lora, up_ltem;
+    uint32_t w_lora = wear_scenario(RTSM_SKU_LORA, &up_lora);
+    uint32_t w_ltem = wear_scenario(RTSM_SKU_LTEM, &up_ltem);
+    CHECK(w_lora * 100u < up_lora);      /* < 1 write per 100 uplinks */
+    CHECK(w_lora <= 30u);                /* <= 1 write/day */
+    CHECK(w_ltem <= 8u);                 /* << 1 write/day */
+    printf("    info: 30 days steady: LoRa %u NV writes / %u uplinks, LTE-M %u NV writes / %u uplinks\n",
+           (unsigned)w_lora, (unsigned)up_lora, (unsigned)w_ltem, (unsigned)up_ltem);
+}
+
+/* ======================================================================== */
+/* R-9: outage behaviour (long data back-off, link_available)               */
+/* ======================================================================== */
+
+/* 48 h outage with the link state unknown. Returns the status/data send
+ * attempts made during the outage. */
+static uint32_t outage48_unknown(rtsm_sku_t sku)
+{
+    uint32_t i, k, n, a0, f0;
+    setup(sku);
+    commission_and_run();
+    for (i = 0; i < 144u; i++) tick();
+    S.link_up = false;
+    S.da_n = 0;
+    a0 = R.send_attempts_total;
+    f0 = R.send_failures_total;
+    for (i = 0; i < 288u; i++) tick();
+    n = S.da_n;
+    CHECK_EQ(R.send_attempts_total - a0, n); /* no alarms in this scenario */
+    CHECK_EQ(R.send_failures_total - f0, n);
+    /* Retry gaps: 10, 20, 40, 80, 120, 120, ... min. */
+    for (k = 1; k < n && k < SIM_MAX_ATTEMPT_LOG; k++) {
+        uint32_t exp = k <= 4u ? RTSM_DATA_BACKOFF_FIRST_S << (k - 1u) : RTSM_DATA_BACKOFF_MAX_S;
+        CHECK_EQ(S.da_t[k] - S.da_t[k - 1u], exp);
+    }
+    CHECK(n <= 48u * 60u / 120u + 6u);
+    CHECK(n >= 20u);
+    S.link_up = true; /* reconnect; next retry is at most 120 min away */
+    for (i = 0; i < 144u; i++) tick();
+    CHECK_EQ(rlog_count_unsent(&R.log), 0);
+    CHECK_EQ(delivery_violations(), 0);
+    CHECK_EQ(seq_reuse_count(), 0);
+    return n;
+}
+
+static void t_outage48_unknown_ltem(void)
+{
+    uint32_t n = outage48_unknown(RTSM_SKU_LTEM);
+    CHECK_EQ(n, 27); /* first failure at the next hourly boundary, then 10/20/40/80/120... */
+    printf("    info: LTE-M 48 h outage, link unknown: %u status/data attempts (288 before)\n",
+           (unsigned)n);
+}
+
+static void t_outage48_unknown_lora(void)
+{
+    uint32_t n = outage48_unknown(RTSM_SKU_LORA);
+    CHECK_EQ(n, 27);
+    printf("    info: LoRa 48 h outage, link unknown: %u status/data attempts (288 before)\n",
+           (unsigned)n);
+}
+
+/* link_available() == 0: no status/data attempt at all, but a pending alarm
+ * is still attempted on every tick; everything goes out on reconnection. */
+static void t_link_down_no_data_attempts(void)
+{
+    uint32_t i, d0, c, alarm_ticks = 0, before;
+    setup(RTSM_SKU_LTEM);
+    sim_enable_link_available(&S, 1);
+    commission_and_run();
+    for (i = 0; i < 144u; i++) tick();
+    S.link_up = false;
+    S.link_avail = 0;
+    d0 = S.da_n;
+    before = S.nmsg;
+    feed(4100); /* level 1 alarm during the outage */
+    for (i = 0; i < 287u; i++) {
+        advance(TICK - 1u);
+        c = S.attempts_by_type[PL_T_ALARM];
+        advance(1); /* the tick */
+        if (S.attempts_by_type[PL_T_ALARM] > c) alarm_ticks++;
+    }
+    CHECK_EQ(alarm_ticks, 287);
+    CHECK_EQ(S.da_n - d0, 0);
+    S.link_up = true;
+    S.link_avail = 1;
+    for (i = 0; i < 144u; i++) tick();
+    CHECK(find_alarm(before, PL_ALM_LEVEL_UP) >= 0);
+    CHECK_EQ(rlog_count_unsent(&R.log), 0);
+    CHECK_EQ(delivery_violations(), 0);
+    CHECK_EQ(seq_reuse_count(), 0);
+}
+
 const test_case_t rtsm_tests[] = {
     { "rtsm: SHIP -> COMMISSION after 60 s attached (not 59 s)", t_ship_to_commission },
     { "rtsm: no RUN without valid config", t_no_run_without_config },
@@ -942,5 +1365,16 @@ const test_case_t rtsm_tests[] = {
     { "rtsm: D-13 lag compensation in the data path", t_lag_comp_integration },
     { "rtsm: time sync offsets timestamps", t_time_sync },
     { "rtsm: next wake-up", t_next_wakeup },
+    { "nvstate: record encode/decode, CRC-32", t_nv_record_unit },
+    { "nvstate: reset mid-RUN resumes RUN, config kept, no seq reuse", t_nv_reset_resumes_run },
+    { "nvstate: seq block reservation across reset", t_nv_seq_reservation },
+    { "nvstate: reset in LOCKED stays LOCKED", t_nv_reset_locked },
+    { "nvstate: token rotation and service SHIP persisted", t_nv_token_and_service },
+    { "nvstate: corrupt slot A falls back to slot B", t_nv_corrupt_a_uses_b },
+    { "nvstate: both slots corrupt -> SHIP factory defaults", t_nv_both_corrupt_defaults },
+    { "nvstate: flash wear bound in steady operation", t_nv_flash_wear },
+    { "rtsm: 48 h outage LTE-M, link unknown: long back-off, exactly once", t_outage48_unknown_ltem },
+    { "rtsm: 48 h outage LoRa, link unknown: long back-off, no loss", t_outage48_unknown_lora },
+    { "rtsm: link_available()=0: no data attempts, alarms every tick", t_link_down_no_data_attempts },
     { NULL, NULL }
 };

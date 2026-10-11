@@ -56,6 +56,16 @@ def run():
             if label.startswith("good") and opt.startswith("B"):
                 checks.append(Check("T1-07", f"LTE-M SKU life, option B, {label}",
                                     f"{life_years(d):.1f} yr", ">= 3 yr", life_years(d) >= 3))
+    # Outage cost (R-9): failed attempts while a good-coverage site is without service
+    base = ltem_daily_mah(hi, 1.0, 20, True)
+    for label, per_day in (("naive retry every tick [rejected]", p.OUTAGE_ATTEMPTS_PER_DAY_NAIVE.value),
+                           ("firmware back-off (R-9 fix)", p.OUTAGE_ATTEMPTS_PER_DAY_BACKOFF.value)):
+        d = base + p.OUTAGE_FRACTION.value * per_day * p.LTEM_FAILED_ATTEMPT_MAH.value / p.DCDC_EFFICIENCY.value
+        rows.append(("LTE-M opt B", f"good, worst + {p.OUTAGE_FRACTION.value:.0%} outage, {label}",
+                     "20 min", f"{d:.2f}", f"{life_years(d):.1f}"))
+        if "back-off" in label:
+            checks.append(Check("T1-07", "LTE-M SKU life, option B, good worst, with 10 % outage and back-off",
+                                f"{life_years(d):.1f} yr", ">= 3 yr", life_years(d) >= 3))
     table = md_table(["SKU", "Case", "HOT reporting", "mAh/day", "Life (yr)"], rows)
     md = (f"### Battery life\n\nUsable {p.CELL_USABLE_MAH.value:.0f} mAh of a "
           f"{p.CELL_NOMINAL_MAH.value:.0f} mAh cell; self-discharge "

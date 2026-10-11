@@ -10,7 +10,11 @@ Design load = mass * (3-sigma random peak [+ g for vertical]) * margin.
 The EN 50125-3 values are unconfirmed and the axis mapping is assumed (worst
 axis = vertical), so every check is shown per axis.
 """
+import json
 import math
+import os
+
+import numpy as np
 
 import params as p
 from common import Check, md_table, checks_table
@@ -18,8 +22,18 @@ from common import Check, md_table, checks_table
 G = 9.81
 
 
+CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fem_magnet_cache.json")
+
+
 def pull_at_gap_n(gap_mm: float) -> float:
-    """Pot-magnet pull vs air gap, F(g) = F0 / (1 + k g)^2 with F(g_half) = F0 / 2."""
+    """Total pull of all pots vs gap. Uses the calibrated magnetostatic FEM curve on rail
+    steel at 80 degC (fem_magnet.py) when available; otherwise the earlier analytic fit
+    F(g) = F0 / (1 + k g)^2 with F(g_half) = F0 / 2."""
+    if os.path.exists(CACHE):
+        with open(CACHE) as f:
+            c = json.load(f)
+        per_pot = float(np.interp(gap_mm, c["gaps_mm"], c["pull_80c_n"]))
+        return p.N_MAGNETS.value * per_pot
     k = (math.sqrt(2) - 1) / p.MAG_HALF_PULL_GAP_MM.value
     f0 = p.N_MAGNETS.value * p.MAG_RATED_PULL_KGF.value * G
     return f0 / (1 + k * gap_mm) ** 2
@@ -38,7 +52,8 @@ def run():
             "vertical": m * (a["vertical"] + G) * margin}
 
     rows = [
-        ("Rated pull, zero gap", f"{pull_at_gap_n(0):.0f} N"),
+        ("Pull source", "calibrated FEM, rail steel, 80 °C" if os.path.exists(CACHE) else "analytic fit"),
+        ("Pull at 0.05 mm gap", f"{pull_at_gap_n(0.05):.0f} N"),
         (f"Pull at worst gap {p.GAP_WORST_MM.value} mm", f"{clamp:.0f} N"),
         ("Friction, bare pot face (µ 0.15)", f"{clamp * p.MU_BARE_WORST.value:.0f} N"),
         ("Friction, PU-coated pot face (µ 0.5)", f"{clamp * p.MU_COATED.value:.0f} N"),
@@ -65,7 +80,7 @@ def run():
     hook_req = load["vertical"]
     sigma = (6 * hook_req * p.HOOK_LEVER_MM.value / 1000
              / (p.HOOK_WIDTH_MM.value / 1000 * (p.HOOK_THICK_MM.value / 1000) ** 2)) / 1e6
-    checks.append(Check("T1-10", f"Hook root bending stress at design load ({p.HOOK_THICK_MM.value:.0f} mm PA6-GF30)",
+    checks.append(Check("T1-10", f"Hook root bending stress at design load ({p.HOOK_THICK_MM.value:.0f} mm PA6-GF30, {p.HOOK_LEVER_MM.value:.0f} mm lever)",
                         f"{sigma:.1f} MPa", f"<= {p.PA_GF_FATIGUE_MPA.value:.0f} MPa (fatigue, 80 °C)",
                         sigma <= p.PA_GF_FATIGUE_MPA.value))
     md = ("### Retention under on-rail vibration\n\n"

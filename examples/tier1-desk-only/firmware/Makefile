@@ -7,7 +7,7 @@ CC      = gcc
 CFLAGS  = -std=c99 -Wall -Wextra -Werror -pedantic -O2 -g -Iinclude
 BUILD   = build
 
-CORE_SRC = src/payload.c src/queue.c src/rlog.c src/rtsm.c
+CORE_SRC = src/payload.c src/queue.c src/rlog.c src/nvstate.c src/rtsm.c
 TEST_SRC = test/test_main.c test/test_payload.c test/test_rtsm.c test/sim_hal.c
 HDRS     = $(wildcard include/*.h) test/test.h test/sim_hal.h
 

@@ -44,7 +44,9 @@ typedef struct rtsm_hal {
     bool (*lid_closed)(void *ctx);     /* tamper microswitch */
     bool (*imu_movement)(void *ctx);   /* latched event flag; read clears it */
     uint8_t (*battery_pct)(void *ctx); /* 0..100 */
-    uint16_t (*energy_mAh)(void *ctx); /* coulomb counter; optional (NULL -> 0) */
+    /* Coulomb counter since power-up (restarts at 0 after a reset); the
+     * core adds the total persisted in nvstate. Optional (NULL -> 0). */
+    uint16_t (*energy_mAh)(void *ctx);
     uint8_t (*link_quality)(void *ctx);/* 0..255; optional (NULL -> 0) */
 
     /* Transmit one uplink. Returns true only when the bearer accepted it
@@ -54,6 +56,19 @@ typedef struct rtsm_hal {
     /* Persistent log storage, slot = 0 .. capacity-1. */
     bool (*log_read)(void *ctx, uint16_t slot, rtsm_log_entry_t *out);
     bool (*log_write)(void *ctx, uint16_t slot, const rtsm_log_entry_t *e);
+
+    /* Network availability hint, e.g. LTE-M "registered" or LoRaWAN
+     * "joined and duty cycle free": 1 yes, 0 no, -1 unknown. Optional
+     * (NULL -> unknown). With 0 the core makes no status/data attempt;
+     * with -1 it uses the long data back-off (RTSM_DATA_BACKOFF_*). */
+    int (*link_available)(void *ctx);
+
+    /* Persistent state record (nvstate.h), two slots: 0 = A, 1 = B. Each
+     * call transfers one whole record of `len` bytes; nv_write must erase
+     * the slot first if the medium needs it. Optional (both NULL -> nothing
+     * persists; every boot starts from factory defaults). */
+    bool (*nv_read)(void *ctx, uint8_t slot, uint8_t *buf, size_t len);
+    bool (*nv_write)(void *ctx, uint8_t slot, const uint8_t *buf, size_t len);
 } rtsm_hal_t;
 
 #endif /* RTSM_HAL_H */

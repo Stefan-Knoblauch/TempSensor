@@ -15,7 +15,10 @@ max 15:00); solar half-sine 06:00-18:00 peaking at 1000 W/m2; rail web =
 air + 25 degC * solar (lagged 1 h), -1 degC at night (sky radiation).
 Explicit Euler, dt = 0.5 s, three days to settle, evaluate day 3.
 """
+import json
 import math
+import os
+import re
 
 import params as p
 from common import Check, md_table, checks_table
@@ -46,7 +49,29 @@ VARIANTS = {
     "B: sprung brass slug, guarded": (5.7, 0.20, 0.05, True),
     "C: sensor on centre pot cup, guarded (D-12)": (28.0, 0.50, 0.15, True),
 }
-TAU_COMP_S = 150.0     # firmware lag-compensation constant (D-13); minimax over nominal/worst cases
+HERE = os.path.dirname(os.path.abspath(__file__))
+_FEM = os.path.join(HERE, "fem_thermal_cache.json")
+
+
+def load_fem_values():
+    """Use geometry-derived values from fem_thermal.py for variant C when available."""
+    if os.path.exists(_FEM):
+        with open(_FEM) as f:
+            c = json.load(f)
+        VARIANTS["C: sensor on centre pot cup, guarded (D-12)"] = (
+            c["c_elem"], c["g_contact_nominal"], c["g_contact_worst"], True)
+        return True
+    return False
+
+
+def firmware_tau_s():
+    """Lag-compensation constant as compiled into the firmware (rtsm.h)."""
+    hdr = os.path.join(HERE, "..", "firmware", "include", "rtsm.h")
+    m = re.search(r"#define\s+RAIL_TAU_COMP_S\s+(\d+)", open(hdr).read())
+    return float(m.group(1))
+
+
+TAU_COMP_S = firmware_tau_s()   # D-13: the analysis verifies the value the firmware uses
 
 
 def simulate(case, variant):
@@ -103,6 +128,8 @@ def simulate(case, variant):
 def run():
     checks, rows = [], []
     sensor_budget = p.INSTALLED_ERROR_BUDGET_C.value - p.TMP117_ACC_C.value
+    sims = {}
+    fem = load_fem_values()
     for variant in VARIANTS:
       for case in CASES:
         out, tau = simulate(case, variant)
@@ -111,6 +138,8 @@ def run():
         err = [sn - rail for (_, _, rail, sn, _, _) in out]
         comp = [out[k][3] + TAU_COMP_S * (out[k][3] - out[k - 1][3]) / 600.0 - out[k][2]
                 for k in range(1, len(out))]
+        if final:
+            sims[case] = out
         hot = [sn - rail for (_, _, rail, sn, _, _) in out if rail >= 40.0]
         pocket_bias = max(pk - air for (_, air, _, _, _, pk) in out)
         house_max = max(ho for (_, _, _, _, ho, _) in out)
@@ -124,6 +153,11 @@ def run():
                             max(map(abs, comp)) <= sensor_budget))
         checks.append(Check("T1-08", f"Housing peak temperature, {label}",
                             f"{house_max:.1f} °C", "<= 85 °C", house_max <= 85.0))
+    # best compensation constant for the adopted variant (minimax over the cases)
+    def worst_err(tc):
+        return max(max(abs(o[k][3] + tc * (o[k][3] - o[k - 1][3]) / 600.0 - o[k][2])
+                       for k in range(1, len(o))) for o in sims.values())
+    tc_best = min(range(0, 401, 10), key=worst_err)
     table = md_table(["Case", "Rail max (°C)", "Housing max (°C)", "Max |error| all day (°C)",
                       "Max |error| with lag comp. (°C)", "Time constant (s)",
                       "Near-rail air bias vs air, max (°C)"], rows)
@@ -133,6 +167,11 @@ def run():
           f"double internal leakage).\n\n{table}\n\n"
           f"Error budget: {p.INSTALLED_ERROR_BUDGET_C.value} °C installed = TMP117 "
           f"{p.TMP117_ACC_C.value} °C + mounting ≤ {sensor_budget:.1f} °C (linear sum).\n\n"
+          + ("Variant C uses geometry-derived contact conductance and capacity from the thermal FEM. "
+             if fem else "Variant C uses the assumed lumped values (thermal FEM cache absent). ") +
+          f"Lag compensation uses the firmware's compiled constant τ = {TAU_COMP_S:.0f} s; the minimax "
+          f"optimum for these cases is {tc_best} s (worst error {worst_err(tc_best):.3f} °C vs "
+          f"{worst_err(TAU_COMP_S):.3f} °C at the firmware value).\n\n"
           f"{checks_table(checks)}\n")
     return {"md": md, "checks": checks}
 

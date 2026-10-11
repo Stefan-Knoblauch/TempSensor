@@ -9,6 +9,11 @@
  *     locked_step()    LOCKED: 6-hourly beacon, flush queued alarms
  *   rtsm_on_downlink() 0x81..0x84
  *
+ * Persistence (R-9): config, state class, unlock token, reset count, a seq
+ * reservation and the energy total live in nvstate (A/B record). They are
+ * written on change only, plus once per boot, once per RTSM_NV_SEQ_BLOCK
+ * uplinks and once per RTSM_NV_ENERGY_STEP_MAH.
+ *
  * Timing is done in HAL time (RTC seconds). Device Unix time used in
  * payloads is HAL time + time_offset, so a 0x84 time sync never disturbs
  * the schedules. All "due" comparisons are plain >= on uint32 Unix seconds
@@ -65,6 +70,113 @@ static bool queues_pending(const rtsm_t *r)
     return mq_count(&r->q_alarm) > 0u || mq_count(&r->q_status) > 0u;
 }
 
+/* ======================================================================== */
+/* Persistence (nvstate)                                                    */
+/* ======================================================================== */
+
+uint32_t rtsm_energy_total(const rtsm_t *r)
+{
+    uint32_t e = r->hal->energy_mAh ? r->hal->energy_mAh(r->hal->ctx) : 0u;
+    return r->energy_base + e;
+}
+
+/* State class that a reset must come back to. */
+static uint8_t nv_class(const rtsm_t *r)
+{
+    rtsm_state_t s = r->state == RTSM_ALARM_TAMPER ? r->op_state : r->state;
+    switch (s) {
+    case RTSM_SHIP:
+        return r->ship_armed ? (uint8_t)NVS_CLASS_SHIP : (uint8_t)NVS_CLASS_SHIP_SERVICE;
+    case RTSM_RUN:
+    case RTSM_HOT:
+        return r->have_config ? (uint8_t)NVS_CLASS_RUN : (uint8_t)NVS_CLASS_SHIP;
+    case RTSM_LOCKED:
+        return (uint8_t)NVS_CLASS_LOCKED;
+    default:
+        return (uint8_t)NVS_CLASS_SHIP; /* COMMISSION: no config yet */
+    }
+}
+
+/* What NV should hold now (energy and seq reservation as last written). */
+static void nv_want(const rtsm_t *r, nvs_data_t *d)
+{
+    *d = r->nv.d;
+    d->state_class = nv_class(r);
+    d->have_config = r->have_config;
+    memset(d->config, 0, sizeof d->config);
+    if (r->have_config) {
+        (void)pl_encode_config(d->config, sizeof d->config, &r->cfg);
+    }
+}
+
+static void nv_write_now(rtsm_t *r, nvs_data_t *d)
+{
+    d->energy_mAh = rtsm_energy_total(r);
+    (void)nvs_commit(&r->nv, d);
+}
+
+/* Write only if something changed (or the energy total moved by a step,
+ * when check_energy is set - that reads the HAL counter). */
+static void nv_persist(rtsm_t *r, bool check_energy)
+{
+    nvs_data_t d;
+    bool due = false;
+    nv_want(r, &d);
+    if (check_energy && r->hal->energy_mAh != NULL) {
+        uint32_t e = rtsm_energy_total(r);
+        due = e > r->nv.d.energy_mAh && e - r->nv.d.energy_mAh >= RTSM_NV_ENERGY_STEP_MAH;
+    }
+    if (due || nvs_differs(&r->nv, &d)) {
+        nv_write_now(r, &d);
+    }
+}
+
+/* Every seq the core puts on air goes through here. Before a value at or
+ * beyond the NV reservation is used, a new block is reserved, so a reset
+ * (which resumes at the reservation) can never reuse a seq. */
+static uint16_t next_seq(rtsm_t *r)
+{
+    uint16_t left = (uint16_t)(r->nv.d.seq_reserved - r->seq);
+    if (left == 0u || left > RTSM_NV_SEQ_BLOCK) {
+        nvs_data_t d;
+        nv_want(r, &d);
+        d.seq_reserved = (uint16_t)(r->seq + RTSM_NV_SEQ_BLOCK);
+        nv_write_now(r, &d);
+    }
+    return pl_seq_next(&r->seq);
+}
+
+/* ======================================================================== */
+/* Link state and send gating                                               */
+/* ======================================================================== */
+
+static int link_state(const rtsm_t *r)
+{
+    int l = r->hal->link_available ? r->hal->link_available(r->hal->ctx) : -1;
+    return l > 0 ? 1 : (l == 0 ? 0 : -1);
+}
+
+/* Status/install messages use the long back-off, except during
+ * COMMISSION where an installer is waiting on site (short back-off). */
+static bool status_long_backoff(const rtsm_t *r)
+{
+    return r->state == RTSM_LOCKED || r->op_state != RTSM_COMMISSION;
+}
+
+/* May a status/data message be attempted now? Link known down: no.
+ * Link known up: yes. Unknown: only once the long back-off has expired. */
+static bool data_gate(const rtsm_t *r, uint32_t now, bool long_backoff)
+{
+    int l = link_state(r);
+    if (l == 0) {
+        return false;
+    }
+    if (l > 0 || !long_backoff) {
+        return true;
+    }
+    return now >= r->data_next_ok;
+}
+
 const char *rtsm_state_name(rtsm_state_t s)
 {
     switch (s) {
@@ -104,12 +216,24 @@ int16_t rtsm_rail_compensate(int16_t raw, int16_t prev, uint32_t dt_s)
 /* Transmission primitives                                                  */
 /* ======================================================================== */
 
-/* One radio attempt. Failure starts/extends the retry back-off. */
-static bool radio_tx(rtsm_t *r, const uint8_t *buf, size_t len, uint32_t now)
+/* One radio attempt. Failure starts/extends the short retry back-off, and
+ * for status/data (`data_class`) also the long data back-off. Any success
+ * clears both. */
+static bool radio_tx(rtsm_t *r, const uint8_t *buf, size_t len, uint32_t now, bool data_class)
 {
+    r->send_attempts_total++;
     if (r->hal->radio_send(r->hal->ctx, buf, len)) {
         r->backoff_s = 0;
+        r->data_backoff_s = 0;
+        r->data_next_ok = 0;
         return true;
+    }
+    r->send_failures_total++;
+    if (data_class) {
+        r->data_backoff_s = r->data_backoff_s == 0u
+                                ? RTSM_DATA_BACKOFF_FIRST_S
+                                : min_u32(2u * r->data_backoff_s, RTSM_DATA_BACKOFF_MAX_S);
+        r->data_next_ok = now + r->data_backoff_s;
     }
     if (r->tx_fail_count < 255u) {
         r->tx_fail_count++;
@@ -123,11 +247,11 @@ static bool radio_tx(rtsm_t *r, const uint8_t *buf, size_t len, uint32_t now)
 
 /* Send queued messages in FIFO order; stop at the first failure (the link
  * is assumed down until the next retry). */
-static bool flush_queue(rtsm_t *r, mq_t *q, uint32_t now)
+static bool flush_queue(rtsm_t *r, mq_t *q, uint32_t now, bool data_class)
 {
     const mq_msg_t *m;
     while ((m = mq_peek(q)) != NULL) {
-        if (!radio_tx(r, m->buf, m->len, now)) {
+        if (!radio_tx(r, m->buf, m->len, now, data_class)) {
             return false;
         }
         mq_pop(q);
@@ -135,10 +259,21 @@ static bool flush_queue(rtsm_t *r, mq_t *q, uint32_t now)
     return true;
 }
 
-/* Alarm queue first, then status/install queue. */
+/* Alarm queue first (always attempted), then the status/install queue
+ * (subject to the link gate). Returns false if anything is left behind. */
 static bool flush_priority(rtsm_t *r, uint32_t now)
 {
-    return flush_queue(r, &r->q_alarm, now) && flush_queue(r, &r->q_status, now);
+    bool lng = status_long_backoff(r);
+    if (!flush_queue(r, &r->q_alarm, now, false)) {
+        return false;
+    }
+    if (mq_count(&r->q_status) == 0u) {
+        return true;
+    }
+    if (!data_gate(r, now, lng)) {
+        return false;
+    }
+    return flush_queue(r, &r->q_status, now, lng);
 }
 
 /* ======================================================================== */
@@ -148,7 +283,7 @@ static bool flush_priority(rtsm_t *r, uint32_t now)
 static void raise_alarm(rtsm_t *r, uint8_t code, uint32_t now, const pl_record_t *rec)
 {
     uint8_t buf[PL_ALARM_SIZE];
-    size_t n = pl_encode_alarm(buf, sizeof buf, pl_seq_next(&r->seq), to_unix(r, now),
+    size_t n = pl_encode_alarm(buf, sizeof buf, next_seq(r), to_unix(r, now),
                                code, rec);
     (void)mq_push(&r->q_alarm, buf, (uint8_t)n);
     r->tx_kick = true; /* T1-05: alarms go out immediately */
@@ -159,12 +294,12 @@ static void queue_status(rtsm_t *r, uint32_t now)
     uint8_t buf[PL_STATUS_SIZE];
     pl_status_t s;
     size_t n;
-    s.seq = pl_seq_next(&r->seq);
+    s.seq = next_seq(r);
     s.time = to_unix(r, now);
     s.battery_pct = r->hal->battery_pct(r->hal->ctx);
-    s.energy_mAh = r->hal->energy_mAh ? r->hal->energy_mAh(r->hal->ctx) : 0u;
+    s.energy_mAh = (uint16_t)min_u32(rtsm_energy_total(r), 0xFFFFu);
     s.fw_version = r->id.fw_version;
-    s.reset_count = r->id.reset_count;
+    s.reset_count = (uint8_t)r->nv.d.reset_count; /* low 8 bits on air */
     s.tx_fail_count = r->tx_fail_count;
     s.link_quality = r->hal->link_quality ? r->hal->link_quality(r->hal->ctx) : 0u;
     r->tx_fail_count = 0; /* counts failures between two status messages */
@@ -178,7 +313,7 @@ static void queue_install(rtsm_t *r, uint32_t now)
     uint8_t buf[PL_INSTALL_SIZE];
     pl_install_t s;
     size_t n;
-    s.seq = pl_seq_next(&r->seq);
+    s.seq = next_seq(r);
     s.time = to_unix(r, now);
     s.hw_rev = r->id.hw_rev;
     s.fw_version = r->id.fw_version;
@@ -210,6 +345,7 @@ static void enter_ship(rtsm_t *r, bool after_service)
      * must be seen detached once before it can re-commission itself. */
     r->ship_armed = !after_service;
     r->attach_pending = false;
+    nv_persist(r, false);
 }
 
 static void enter_commission(rtsm_t *r, uint32_t now)
@@ -230,7 +366,25 @@ static void enter_commission(rtsm_t *r, uint32_t now)
     r->sent_detach = false;
     r->lid_was_closed = r->hal->lid_closed(r->hal->ctx);
     (void)r->hal->imu_movement(r->hal->ctx); /* discard handling/transport events */
+    nv_persist(r, false);                     /* e.g. LOCKED -> unlocked */
     queue_install(r, now);
+}
+
+/* Boot into a commissioned unit (NV class RUN with a valid config): a new
+ * 10-min grid starts now, the pre-reset log is back-filled, and a status
+ * message tells the platform about the reset (reset_count). Level, HOT and
+ * cadence are re-derived from the next samples. */
+static void resume_run(rtsm_t *r, uint32_t now)
+{
+    r->state = RTSM_RUN;
+    r->op_state = RTSM_RUN;
+    r->anchor = now;
+    r->next_sample = now;
+    r->next_status = now + RTSM_HEARTBEAT_S;
+    r->next_install = now + RTSM_INSTALL_RESEND_S;
+    r->pending_from = r->log.next;
+    r->lid_was_closed = r->hal->lid_closed(r->hal->ctx);
+    queue_status(r, now);
 }
 
 static void enter_locked(rtsm_t *r, uint32_t now)
@@ -238,6 +392,7 @@ static void enter_locked(rtsm_t *r, uint32_t now)
     r->state = RTSM_LOCKED;
     r->next_beacon = now + RTSM_LOCKED_BEACON_S;
     r->tx_kick = true;
+    nv_persist(r, false); /* before any TX: a battery pull cannot unlock */
 }
 
 /* ======================================================================== */
@@ -423,9 +578,9 @@ static bool send_batch(rtsm_t *r, uint32_t now, uint32_t first, uint8_t n)
         recs[i].air_cC = e.air_cC;
         recs[i].flags = e.flags;
     }
-    len = pl_encode_batch(r->txbuf, sizeof r->txbuf, pl_seq_next(&r->seq), base,
+    len = pl_encode_batch(r->txbuf, sizeof r->txbuf, next_seq(r), base,
                           RTSM_INTERVAL_MIN, recs, n);
-    if (len == 0u || !radio_tx(r, r->txbuf, len, now)) {
+    if (len == 0u || !radio_tx(r, r->txbuf, len, now, true)) {
         r->seq = seq_before;
         r->data_link_lost = true;
         return false;
@@ -504,6 +659,13 @@ static void tick_tx(rtsm_t *r, uint32_t now, uint32_t cur, uint32_t grid)
     }
     /* No data before site config (COMMISSION records are back-filled). */
     if (!r->have_config || (r->op_state != RTSM_RUN && r->op_state != RTSM_HOT)) {
+        return;
+    }
+    /* Link known down, or long back-off running: no data this tick. The
+     * next tick that may send is treated as a batch boundary (newest
+     * first), like after a failed attempt. */
+    if (!data_gate(r, now, true)) {
+        r->data_link_lost = true;
         return;
     }
     if (r->id.sku == RTSM_SKU_LTEM) {
@@ -637,6 +799,9 @@ static void operating_step(rtsm_t *r, uint32_t now)
         r->next_install = now + RTSM_INSTALL_RESEND_S;
     }
 
+    if (tick) {
+        nv_persist(r, true); /* energy step check once per sample */
+    }
     if (tick && have_cur) {
         tick_tx(r, now, cur, grid);
     } else if (tick || r->tx_kick || (queues_pending(r) && now >= r->next_tx_ok)) {
@@ -649,6 +814,7 @@ static void locked_step(rtsm_t *r, uint32_t now)
 {
     if (now >= r->next_beacon) {
         queue_status(r, now); /* "stolen" beacon */
+        nv_persist(r, true);
         r->next_beacon += RTSM_LOCKED_BEACON_S *
                           ((now - r->next_beacon) / RTSM_LOCKED_BEACON_S + 1u);
         (void)flush_priority(r, now);
@@ -664,10 +830,13 @@ static void locked_step(rtsm_t *r, uint32_t now)
 
 void rtsm_init(rtsm_t *r, const rtsm_hal_t *hal, const rtsm_init_t *init)
 {
+    nvs_data_t d;
+    pl_downlink_t dl;
+    uint32_t now;
+
     memset(r, 0, sizeof *r);
     r->hal = hal;
     r->id = *init;
-    r->seq = init->initial_seq;
     r->state = RTSM_SHIP;
     r->op_state = RTSM_SHIP;
     r->ship_armed = true;
@@ -682,6 +851,59 @@ void rtsm_init(rtsm_t *r, const rtsm_hal_t *hal, const rtsm_init_t *init)
     rlog_init(&r->log, hal, (uint16_t)RLOG_CAPACITY);
     mq_init(&r->q_alarm, r->alarm_store, (uint8_t)RTSM_ALARM_QUEUE_LEN);
     mq_init(&r->q_status, r->status_store, (uint8_t)RTSM_STATUS_QUEUE_LEN);
+
+    /* Persistent state (R-9). Resume seq at the reservation, so no seq
+     * used before the reset can be reused (gaps are possible). */
+    nvs_load(&r->nv, hal, init->unlock_token);
+    r->energy_base = r->nv.d.energy_mAh;
+    r->seq = r->nv.d.seq_reserved;
+    if (r->nv.d.have_config &&
+        pl_decode_downlink(r->nv.d.config, PL_CONFIG_SIZE, &dl) == PL_DL_OK &&
+        dl.type == PL_T_CONFIG) {
+        r->cfg = dl.u.config;
+        r->have_config = true;
+    }
+
+    /* Boot record: reset_count + 1 and a fresh seq block, one write. */
+    d = r->nv.d;
+    d.reset_count++;
+    d.seq_reserved = (uint16_t)(r->seq + RTSM_NV_SEQ_BLOCK);
+    d.have_config = r->have_config;
+    if (!r->have_config) {
+        memset(d.config, 0, sizeof d.config);
+        if (d.state_class == (uint8_t)NVS_CLASS_RUN) {
+            d.state_class = (uint8_t)NVS_CLASS_SHIP; /* cannot run without config */
+        }
+    }
+    nv_write_now(r, &d);
+
+    now = hal_now(r);
+    switch (d.state_class) {
+    case NVS_CLASS_RUN:
+        resume_run(r, now);
+        break;
+    case NVS_CLASS_LOCKED:
+        r->state = RTSM_LOCKED;
+        r->op_state = RTSM_LOCKED;
+        r->next_beacon = now + RTSM_LOCKED_BEACON_S;
+        queue_status(r, now); /* powered up while locked: beacon at once */
+        break;
+    case NVS_CLASS_SHIP_SERVICE:
+        r->ship_armed = false;
+        break;
+    default:
+        break; /* SHIP, armed */
+    }
+}
+
+void rtsm_set_unlock_token(rtsm_t *r, const uint8_t token[PL_TOKEN_LEN])
+{
+    nvs_data_t d;
+    nv_want(r, &d);
+    memcpy(d.token, token, PL_TOKEN_LEN);
+    if (nvs_differs(&r->nv, &d)) {
+        nv_write_now(r, &d);
+    }
 }
 
 void rtsm_step(rtsm_t *r)
@@ -689,6 +911,7 @@ void rtsm_step(rtsm_t *r)
     uint32_t now = hal_now(r);
 
     if (r->state == RTSM_SHIP && !ship_step(r, now)) {
+        nv_persist(r, false); /* service SHIP re-armed by a detach */
         return; /* SHIP: only the Hall sensor is looked at */
     }
     if (r->state != RTSM_LOCKED) {
@@ -696,9 +919,10 @@ void rtsm_step(rtsm_t *r)
     }
     if (r->state == RTSM_LOCKED) {
         locked_step(r, now);
-        return;
+    } else {
+        operating_step(r, now);
     }
-    operating_step(r, now);
+    nv_persist(r, false); /* catches any remaining class change */
 }
 
 static bool token_equal(const uint8_t *a, const uint8_t *b)
@@ -736,6 +960,7 @@ rtsm_dl_result_t rtsm_on_downlink(rtsm_t *r, const uint8_t *buf, size_t len)
             r->cadence = RTSM_CAD_NORMAL;
             r->pending_from = r->log.next; /* COMMISSION records -> backlog */
         }
+        nv_persist(r, false); /* written only if config or class changed */
         return RTSM_DL_APPLIED;
 
     case PL_T_SERVICE:
@@ -751,7 +976,7 @@ rtsm_dl_result_t rtsm_on_downlink(rtsm_t *r, const uint8_t *buf, size_t len)
         if (r->state != RTSM_LOCKED) {
             return RTSM_DL_IGNORED;
         }
-        if (!token_equal(dl.u.token, r->id.unlock_token)) {
+        if (!token_equal(dl.u.token, r->nv.d.token)) {
             return RTSM_DL_REJECTED;
         }
         enter_commission(r, now);
@@ -794,8 +1019,14 @@ uint32_t rtsm_next_wakeup(const rtsm_t *r)
         }
         break;
     }
-    if (queues_pending(r)) {
+    if (mq_count(&r->q_alarm) > 0u) {
         w = min_u32(w, r->next_tx_ok);
+    } else if (mq_count(&r->q_status) > 0u) {
+        uint32_t t = r->next_tx_ok;
+        if (status_long_backoff(r) && r->data_next_ok > t) {
+            t = r->data_next_ok; /* nothing to do before the long back-off */
+        }
+        w = min_u32(w, t);
     }
     return w;
 }

@@ -15,20 +15,22 @@ Rev A is §3 of [`docs/design/tier1-core-design.md`](../../docs/design/tier1-cor
 | T1-07 | Life: LoRa ≥7 yr; LTE-M ≥3 yr in good coverage | Met with D-11 | An (energy) | Verified by analysis; residual R-3 |
 | T1-08 | Electronics -20..+85 °C | Housing peak 64 °C (worst) | An (thermal) | Verified by analysis |
 | T1-09 | IP67 min, IP68 target | Vent added (D-20) | DR | Design only; residual R-5 |
-| T1-10 | Survive EN 50125-3 on-rail vibration/shock | **changed (D-14):** vertical capture by hook and head stop | An (retention) | Verified by analysis; residual R-2 |
-| T1-11 | Retention on rusty/painted/curved web | **changed:** criterion is now 1.5 × 3σ inertial load per axis, replacing "10 × weight" | An (retention) | Verified by analysis; residual R-2 |
+| T1-10 | Survive EN 50125-3 on-rail vibration/shock | **changed (D-14, D-25–D-27):** vertical capture by hook and head stop; compliant parts' first modes ≥ 2.5 kHz | An (retention, modal) | Verified by analysis; residual R-2 |
+| T1-11 | Retention on rusty/painted/curved web | **changed:** criterion is now 1.5 × 3σ inertial load per axis, replacing "10 × weight"; pull from calibrated magnetostatic FEM on rail steel at 80 °C; brushed contact spots (D-24) | An (FEM magnet, retention) | Verified by analysis; residual R-2 |
 | T1-12 | Mass ≤0.6 kg; fits Transnet profiles | One SKU, hook slider (D-15) | An (fit, mass) | Verified by analysis; residual R-6 |
 | T1-13 | TN-01..TN-06 Transnet-derived | Interpretation D-23 | DR (hardware §2) | Design only |
 | T1-14 | Isolation barrier 4 kV DC | — | DR | Design only; residual R-5 |
 | T1-15 | EMC EN 50121-4 / -2 | — | DR | Not verifiable desk-only; residual R-4 |
 | T1-16 | No 2G/3G; EU868 within ICASA limits | — | An (LoRa duty cycle), DR | Verified |
-| T1-17 | Detachment/movement alarm with location hint | — | FW | Verified by test (location via network metadata) |
+| T1-17 | Detachment/movement alarm with location hint | **changed (D-18 rev):** 3-D Hall vector-distance detection | FW, An (FEM magnet) | Verified by test and analysis; separation 22.8 mT vs 20 mT required, drift 4.8 vs 5 mT allowed, incl. ±0.3 mm placement (thin margins) |
 | T1-18 | Firmware lock | — | FW | Verified by test |
 | T1-19 | Exterior free of copper, brass, aluminium | Slug removed; all metal internal or magnet faces | DR | Verified by inspection of the design |
 | T1-20 | Three alarm levels per site, mandatory config | Config extended to 18 B (D-11) | FW, PF | Verified by test |
 | T1-21 | **new:** LoRa nodes within 1.1 km of a 6 m gateway (1.8 km at 15 m) | D-16 | An (link) | Siting rule; residual R-3 |
 | T1-22 | **new:** rail channel lag-compensated, τ = 150 s | D-13 | FW, An | Verified |
-| T1-23 | **new:** hook and head stop carry ≥765 N; hook root ≤20 MPa | D-14 | An (retention) | Verified by analysis |
+| T1-23 | **new:** hook and head stop carry ≥765 N; hook root ≤20 MPa | D-14, D-25 | An (retention) | Verified by analysis |
+| T1-24 | **new:** installation wire-brushes the three contact spots to bare metal | D-24 | DR (procedure) | Design only; residual R-10 |
+| T1-25 | **new:** firmware state survives reset (LOCKED stays locked; no seq reuse); outage send back-off | D-28 | FW | Verified by test |
 
 ## 2. Requirements removed or replaced
 - "Retention ≥ 10 × weight in shear" is replaced by T1-11 rev B: it under-stated the vertical design load by about 13×.
@@ -49,4 +51,6 @@ Rev A is §3 of [`docs/design/tier1-core-design.md`](../../docs/design/tier1-cor
 | R-6 | 48/57 kg/m dimensions from an unverified source | ±10 % window tolerance covered by the slider | Official drawings |
 | R-7 | Interaction with axle counters and track circuits | Field-side mounting, ≥2 m clearance rule | Signalling test |
 | R-8 | Theft rate | Low-value design, lock, alarms | Pilot deployment |
-| R-9 | Firmware core limits (from implementation): config, seq and unlock token are not persisted by the core across a reset (the port layer must supply them); an LTE-M outage costs one send attempt per 10-min tick (not in the energy model); outages over 32 days overwrite the oldest unsent records (counted) | Documented in `firmware/README.md`; log recovered by scanning | Port-layer persistence design; "network registered?" check before sending; energy model extended for outages |
+| R-9 | ~~Firmware state not persisted; outage retries every tick~~ **Resolved by D-28.** Remaining: alarm level, HOT state and queued alarms are not persisted (a level alarm can repeat after a reset); outages over 32 days overwrite the oldest unsent records (counted) | Persistence + back-off implemented and tested; energy model includes outage cost | — |
+| R-10 | Contact spots not brushed at installation; the pull margin then depends on the actual rust | D-24 procedure; detachment alarm | Installer training, audit photos |
+| R-11 | 3-D effects not in the axisymmetric FEMs (neighbouring pots, web curvature, along-rail extent) | Calibration to catalogue; thin margins flagged | 3-D FEM |

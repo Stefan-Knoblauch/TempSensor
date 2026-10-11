@@ -27,9 +27,17 @@ typedef struct {
     uint16_t energy;
     uint8_t lq;
     bool link_up;
+    int link_avail;  /* returned by link_available() when that is hooked up */
+
+    /* nvstate slots (A/B) */
+    uint8_t nv[2][NVS_RECORD_SIZE];
+    uint32_t nv_writes;
 
     uint32_t tx_attempts;
     uint32_t attempt_t[SIM_MAX_ATTEMPT_LOG]; /* time of the first attempts */
+    uint32_t attempts_by_type[8];            /* by message type byte (0x01..0x04) */
+    uint32_t da_n;                           /* status/data attempts (types 1,3,4) */
+    uint32_t da_t[SIM_MAX_ATTEMPT_LOG];      /* their times (first ones); tests reset da_n */
     uint32_t nmsg;
     sim_msg_t *msgs; /* points at a static buffer in sim_hal.c */
 
@@ -38,5 +46,7 @@ typedef struct {
 } sim_t;
 
 void sim_init(sim_t *s, uint32_t t0);
+/* Hook up the optional link_available() HAL function (returns link_avail). */
+void sim_enable_link_available(sim_t *s, int value);
 
 #endif /* SIM_HAL_H */

@@ -33,6 +33,15 @@ static bool s_send(void *c, const uint8_t *buf, size_t len)
         s->attempt_t[s->tx_attempts] = s->now;
     }
     s->tx_attempts++;
+    if (len > 0u && buf[0] < 8u) {
+        s->attempts_by_type[buf[0]]++;
+    }
+    if (len > 0u && buf[0] != PL_T_ALARM) {
+        if (s->da_n < SIM_MAX_ATTEMPT_LOG) {
+            s->da_t[s->da_n] = s->now;
+        }
+        s->da_n++;
+    }
     if (!s->link_up) {
         return false;
     }
@@ -63,6 +72,31 @@ static bool s_log_write(void *c, uint16_t slot, const rtsm_log_entry_t *e)
     return true;
 }
 
+static int s_link_avail(void *c) { return ((sim_t *)c)->link_avail; }
+
+static bool s_nv_read(void *c, uint8_t slot, uint8_t *buf, size_t len)
+{
+    sim_t *s = (sim_t *)c;
+    if (slot > 1u || len != NVS_RECORD_SIZE) return false;
+    memcpy(buf, s->nv[slot], len);
+    return true;
+}
+
+static bool s_nv_write(void *c, uint8_t slot, const uint8_t *buf, size_t len)
+{
+    sim_t *s = (sim_t *)c;
+    if (slot > 1u || len != NVS_RECORD_SIZE) return false;
+    memcpy(s->nv[slot], buf, len);
+    s->nv_writes++;
+    return true;
+}
+
+void sim_enable_link_available(sim_t *s, int value)
+{
+    s->link_avail = value;
+    s->hal.link_available = s_link_avail;
+}
+
 void sim_init(sim_t *s, uint32_t t0)
 {
     uint16_t i;
@@ -77,6 +111,8 @@ void sim_init(sim_t *s, uint32_t t0)
     s->lq = 180;
     s->link_up = true;
     s->msgs = g_msgs;
+    s->link_avail = -1;
+    memset(s->nv, 0xFF, sizeof s->nv); /* erased flash */
     for (i = 0; i < RLOG_CAPACITY; i++) {
         memset(&s->store[i], 0xFF, sizeof s->store[i]); /* erased flash */
     }
@@ -93,4 +129,7 @@ void sim_init(sim_t *s, uint32_t t0)
     s->hal.radio_send = s_send;
     s->hal.log_read = s_log_read;
     s->hal.log_write = s_log_write;
+    s->hal.link_available = NULL; /* unknown unless a test enables it */
+    s->hal.nv_read = s_nv_read;
+    s->hal.nv_write = s_nv_write;
 }
