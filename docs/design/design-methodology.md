@@ -1,6 +1,6 @@
 # Rail Temperature Sensor: Design Methodology and System Layering
 
-Status: **Draft 0.1, desk-based design only.** Source research: [`docs/research/rail-temperature-sensor-research.pdf`](../research/rail-temperature-sensor-research.pdf).
+Status: **Draft 0.2, desk-based design only.** Tier 1 core detail: [`tier1-core-design.md`](tier1-core-design.md). Source research: [`docs/research/rail-temperature-sensor-research.pdf`](../research/rail-temperature-sensor-research.pdf).
 
 > **Evidence basis.** This draft is built only from desk research and engineering judgement. No field testing, prototype measurement or operator consultation has been done yet. Every requirement and number carries an evidence tag (below) so that we can see which ones still need lab or field data. Nothing tagged **[F]** should be treated as settled until a South African field trial has been run.
 
@@ -37,7 +37,7 @@ Status: **Draft 0.1, desk-based design only.** Source research: [`docs/research/
 | G0 Needs & constraints | Research report; operating context (Transnet/PRASA, 3 kV DC / 25 kV AC, theft, coverage) | Done (desk) |
 | G1 System requirements | Requirement set with IDs and tags (Section 5) | Draft in this document |
 | G2 Architecture & layering | Layer model, interfaces, tier mapping (Sections 3, 6, 7) | Draft in this document |
-| G3 Layer detailed design | Schematics, mechanical CAD, firmware design, payload specification | Not started |
+| G3 Layer detailed design | Schematics, mechanical CAD, firmware design, payload specification | Started for Tier 1 core: architecture, firmware states, payload v0, energy budget ([`tier1-core-design.md`](tier1-core-design.md)) |
 | G4 Lab qualification | Thermal-chamber accuracy, magnet pull/shear, IP67/68, EN 50125-3 vibration/shock, EN 50121-4 EMC, battery life | Not started |
 | G5 Field trial | Pilot on a South African line: accuracy against a reference thermometer, retention, train-detection interaction, coverage, theft | **Not started; required before design freeze** |
 | G6 Operator acceptance | Transnet/PRASA technical approval, signalling sign-off | Not started |
@@ -245,9 +245,9 @@ Each layer below gives its responsibility, interfaces, the invariant parts share
 
 ## 10. Open decisions
 
-1. Which tier to prototype first; recommendation is the Tier 1 core with both radio SKUs on one PCB.
+1. ~~Which tier to prototype first.~~ **Decided (D-01, 2026-10-11): Tier 1 core first**, both radio SKUs on one baseboard.
 2. Default adaptive-cadence threshold (35 °C proposed) and whether operators need 10-minute reports all year.
 3. Whether Transnet/PRASA have a preferred LoRaWAN network or cellular operator.
 4. CRT value sets and how they map to Transnet speed-restriction practice (the UK cascade is used here only as a template).
-5. Obtain licensed copies of EN 50125-3, EN 50122-1:2022+A1:2025, EN 50121-2/-4 and Transnet BBC1040, CEE 0059.84 and CEE.0228.96.
+5. Obtain licensed copies of EN 50125-3, EN 50122-1:2022+A1:2025 and EN 50121-2/-4. **Transnet specs: decided (D-02, 2026-10-11)** to design to the BBC1040, CEE 0059.84 and CEE.0228.96 excerpts we hold (see `tier1-core-design.md` Section 1); full documents still to be obtained for confirmation.
 6. Field-trial partner, line section and reference instrumentation (to plan G5).
