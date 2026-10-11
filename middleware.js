@@ -44,10 +44,12 @@ export default async function middleware(request) {
   const url = new URL(request.url);
   const path = url.pathname;
 
-  if (path === '/login' && request.method === 'POST') {
-    const form = await request.formData();
-    const ok = sameText(String(form.get('username') || ''), USER) &&
-               sameText(String(form.get('password') || ''), PASS);
+  if ((path === '/login' || path === '/login.html') && request.method === 'POST') {
+    // Parse the form body directly so it works whatever content type the browser sends.
+    const body = new URLSearchParams(await request.text());
+    const user = (body.get('username') || '').trim().toLowerCase();
+    const pass = (body.get('password') || '').trim();
+    const ok = sameText(user, USER.toLowerCase()) && sameText(pass, PASS);
     if (!ok) return redirect('/login.html?e=1');
     const cookie = `${COOKIE}=${await sessionToken()}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${MAX_AGE}`;
     return redirect('/', cookie);

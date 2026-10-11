@@ -46,9 +46,9 @@ button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
   <img class="logo" src="__LOGO__" alt="bigetron — Measure. Monitor. Optimise." width="190" height="66">
   <h1>Rail temperature sensor</h1>
   <p class="sub">Sign in to open the Tier 1 design explorer.</p>
-  <form method="post" action="/login" autocomplete="on">
+  <form method="post" action="/login" enctype="application/x-www-form-urlencoded" autocomplete="on">
     <p class="err" id="err" hidden>That username and password did not match. Try again.</p>
-    <label for="username">Username<input id="username" name="username" autocomplete="username" required autofocus></label>
+    <label for="username">Username<input id="username" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus></label>
     <label for="password">Password<input id="password" name="password" type="password" autocomplete="current-password" required></label>
     <button type="submit">Sign in</button>
   </form>
