@@ -49,3 +49,4 @@ Rev A is §3 of [`docs/design/tier1-core-design.md`](../../docs/design/tier1-cor
 | R-6 | 48/57 kg/m dimensions from an unverified source | ±10 % window tolerance covered by the slider | Official drawings |
 | R-7 | Interaction with axle counters and track circuits | Field-side mounting, ≥2 m clearance rule | Signalling test |
 | R-8 | Theft rate | Low-value design, lock, alarms | Pilot deployment |
+| R-9 | Firmware core limits (from implementation): config, seq and unlock token are not persisted by the core across a reset (the port layer must supply them); an LTE-M outage costs one send attempt per 10-min tick (not in the energy model); outages over 32 days overwrite the oldest unsent records (counted) | Documented in `firmware/README.md`; log recovered by scanning | Port-layer persistence design; "network registered?" check before sending; energy model extended for outages |

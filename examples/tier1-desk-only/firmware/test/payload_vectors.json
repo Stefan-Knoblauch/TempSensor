@@ -1,0 +1,37 @@
+[
+  {
+    "name": "batch_ltem_n6_with_fault",
+    "hex": "0101026955b9000a060b3b08a2030bc408f2030c74093d038000096a430d5c0997030de909ba07",
+    "fields": {"type": 1, "seq": 258, "base_time": 1767225600, "interval_min": 10, "n": 6, "records": [{"rail_cC": 2875, "air_cC": 2210, "flags": 3}, {"rail_cC": 3012, "air_cC": 2290, "flags": 3}, {"rail_cC": 3188, "air_cC": 2365, "flags": 3}, {"rail_cC": -32768, "air_cC": 2410, "flags": 67}, {"rail_cC": 3420, "air_cC": 2455, "flags": 3}, {"rail_cC": 3561, "air_cC": 2490, "flags": 7}]}
+  },
+  {
+    "name": "batch_lora_n2_negative",
+    "hex": "01ffff6955bb580a02ff6afe5c03ffa1fe8423",
+    "fields": {"type": 1, "seq": 65535, "base_time": 1767226200, "interval_min": 10, "n": 2, "records": [{"rail_cC": -150, "air_cC": -420, "flags": 3}, {"rail_cC": -95, "air_cC": -380, "flags": 35}]}
+  },
+  {
+    "name": "alarm_level_up_l2",
+    "hex": "0200076955c4b80112040c2117",
+    "fields": {"type": 2, "seq": 7, "time": 1767228600, "code": 1, "record": {"rail_cC": 4612, "air_cC": 3105, "flags": 23}}
+  },
+  {
+    "name": "alarm_detached_air_fault",
+    "hex": "0280016955c533110ce6800042",
+    "fields": {"type": 2, "seq": 32769, "time": 1767228723, "code": 17, "record": {"rail_cC": 3302, "air_cC": -32768, "flags": 66}}
+  },
+  {
+    "name": "status_heartbeat",
+    "hex": "03012369570a805704d201020305c8",
+    "fields": {"type": 3, "seq": 291, "time": 1767312000, "battery_pct": 87, "energy_mAh": 1234, "fw_version": 258, "reset_count": 3, "tx_fail_count": 5, "link_quality": 200}
+  },
+  {
+    "name": "install",
+    "hex": "0400006955b8c40201020164",
+    "fields": {"type": 4, "seq": 0, "time": 1767225540, "hw_rev": 2, "fw_version": 258, "attached": 1, "battery_pct": 100}
+  },
+  {
+    "name": "config_downlink",
+    "hex": "81157c177019640dac032000643c09c4f014",
+    "fields": {"type": 129, "l1": 5500, "l2": 6000, "l3": 6500, "hot_threshold": 3500, "rate_of_rise": 800, "hysteresis": 100, "batch_period_min": 60, "cool_threshold": 2500, "cool_batch_min": 240, "hot_batch_min": 20}
+  }
+]
