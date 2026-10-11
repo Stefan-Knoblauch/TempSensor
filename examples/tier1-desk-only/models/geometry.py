@@ -30,21 +30,21 @@ def P(id, name, shape, pos, size=None, *, axis=None, d=None, length=None, color,
                 decision=decision, source=source, qty=qty)
 
 
-RUST, GREY, STEEL, NICKEL, FR4 = "#7a3b22", "#c9ccc8", "#5d6166", "#b8bcc0", "#1f5a3a"
+CASE, WHITE, STEEL, NICKEL, FR4 = "#d5dade", "#f4f5f6", "#5d6166", "#b8bcc0", "#1f5a3a"   # D-31: light-grey case, white cap
 
 PARTS = [
     # --- enclosure ---------------------------------------------------------------
     P("body", "Housing body", "shell", (0, -CAP_T / 2, BODY_D / 2),
-      (BODY_L, BODY_H - CAP_T, BODY_D), color=RUST, mat="polymer", inside=False, order=3,
+      (BODY_L, BODY_H - CAP_T, BODY_D), color=CASE, mat="polymer", inside=False, order=3,
       group="Enclosure", function="Insulating structure that carries everything and keeps the circuit electrically floating (TN-01/02). Moulded head-stop rib on top, pockets for the Hall sensor and the near-rail air sensor.",
-      spec="PA6-GF30, UV-stabilised, rust-brown, 2.5 mm walls", decision="D-15, D-30", source="housing"),
+      spec="PA6-GF30, UV-stabilised, light grey (RAL 7035), 2.5 mm walls", decision="D-15, D-30", source="housing"),
     P("cap", "Top cap", "box", (0, BODY_H / 2 - CAP_T / 2, BODY_D / 2), (BODY_L, CAP_T, BODY_D),
-      color=GREY, mat="polymer", inside=False, explode=(0, 46, 0), order=4, group="Enclosure",
-      function="Light-grey cap that shades the sensing pot from the sun and carries the antenna away from the rail steel.",
-      spec="ASA, light grey (solar absorptance ~0.35)", decision="D-12", source="housing"),
+      color=WHITE, mat="polymer", inside=False, explode=(0, 46, 0), order=4, group="Enclosure",
+      function="White cap that shades the sensing pot from the sun and carries the antenna away from the rail steel.",
+      spec="ASA, white (solar absorptance ~0.25)", decision="D-12", source="housing"),
     P("lid", "Battery-bay lid", "box", (0, (BODY_H / 2 - CAP_T - BODY_H / 2 + WALL) / 2, BODY_D - LID_T / 2),
       (BODY_L - 2 * WALL, BODY_H - CAP_T - WALL, LID_T),
-      color=RUST, mat="polymer", inside=False, explode=(0, 0, 140), order=10, group="Enclosure",
+      color=CASE, mat="polymer", inside=False, explode=(0, 0, 140), order=10, group="Enclosure",
       function="Closes the battery bay. Carries the lid magnet for tamper detection and the pressure-equalising vent.",
       spec="PA6-GF30, 3 mm", decision="D-19, D-20", source="housing"),
     P("oring", "Lid gasket", "frame", (0, -CAP_T / 2, BODY_D - LID_T - 0.6), (BODY_L - 10, BODY_H - CAP_T - 10, 1.6),
@@ -84,8 +84,8 @@ PARTS = [
       spec="TI TMP117, I²C 0x48, on flex", decision="D-12, D-13", source="tmp117"),
     P("guard", "Thermal guard bridge", "box", (0, 0, 12), (2 * POT_PITCH + POT_D - 4, 30, 2), color=STEEL, mat="metal",
       explode=(0, 42, -16), order=1, group="Sensing",
-      function="Steel bridge tied to the outer pots so the sensor's surroundings sit at rail temperature; cuts the reading error from ~2 °C to ~0.25 °C.",
-      spec="2 mm mild steel, laser cut, ~40 g", decision="D-12", source="guard"),
+      function="Steel bridge bolted to the outer pots (D-32) so the sensor's surroundings sit at rail temperature; cuts the reading error from ~2 °C to ~0.25 °C.",
+      spec="2 mm mild steel, laser cut, ~40 g", decision="D-12, D-32", source="guard"),
     P("tmag", "Attachment sensor (TMAG5273)", "box", (-(POT_PITCH + POT_D / 2 + 2.0), 0, 3.5), (2, 3, 1), color="#141414", mat="chip",
       explode=(-36, 0, -30), order=1, group="Sensing",
       function="3-D Hall sensor 2 mm beside the outer rim of pot A. Detects attachment and removal from the change in the magnet's field vector.",
@@ -94,7 +94,7 @@ PARTS = [
       explode=(0, -44, 0), order=2, group="Sensing",
       function="Reads air in a louvred pocket on the lower face. Reported as 'near-rail air', not ambient (it reads 4–8 °C warm in sun).",
       spec="TI TMP117, I²C 0x49", decision="T1-02", source="tmp117"),
-    P("louvre", "Air-pocket louvres", "louvre", (40, -BODY_H / 2 + 0.6, 30), (22, 1.2, 16), color=RUST, mat="polymer",
+    P("louvre", "Air-pocket louvres", "louvre", (40, -BODY_H / 2 + 0.6, 30), (22, 1.2, 16), color=CASE, mat="polymer",
       inside=False, explode=(0, -30, 0), order=2, group="Sensing",
       function="Shaded slots that let air reach the near-rail air sensor.", spec="Moulded in the body", decision="T1-02", source="housing"),
     P("foam", "Foam wall", "box", (0, -CAP_T / 2, 14), (BODY_L - 2 * WALL, BODY_H - CAP_T - 2 * WALL, 2), color="#8c8678", mat="foam",

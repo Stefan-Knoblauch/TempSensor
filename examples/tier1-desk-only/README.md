@@ -4,7 +4,7 @@ A worked example of the design methodology carried through detailed design for t
 
 ## Read in this order
 1. [`00-process.md`](00-process.md): how the gates were adapted, and what the analysis changed.
-2. [`01-decisions.md`](01-decisions.md): decision and assumption register (D-10 to D-29).
+2. [`01-decisions.md`](01-decisions.md): decision and assumption register (D-10 to D-32).
 3. [`02-requirements.md`](02-requirements.md): requirements rev B, verification status and residual risks.
 4. [`hardware/hardware-design.md`](hardware/hardware-design.md): mechanical, isolation and electronics design.
 5. [`firmware/README.md`](firmware/README.md): portable firmware core (C99) with simulated-hardware tests.

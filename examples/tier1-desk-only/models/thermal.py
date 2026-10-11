@@ -39,7 +39,7 @@ def boundary(t):
 CASES = {
     #               G_contact alpha  h_conv  G_leak  A_sun  G_pots
     "nominal":     (0.20,     0.35,  10.0,   0.004,  0.004, 0.30),
-    "worst":       (0.05,     0.80,   3.0,   0.008,  0.008, 0.10),
+    "worst":       (0.05,     0.50,   3.0,   0.008,  0.008, 0.10),
 }
 
 
@@ -53,13 +53,21 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 _FEM = os.path.join(HERE, "fem_thermal_cache.json")
 
 
+G_JOINT = 1.0   # W/K, guard bolted to the threaded stud of pot A/B with thermal compound [E] (D-32)
+
+
 def load_fem_values():
-    """Use geometry-derived values from fem_thermal.py for variant C when available."""
+    """Use geometry-derived values from fem_thermal.py for variant C when available.
+    The guard is tied to the rail through pots A and B: each is the FEM rail-to-back
+    conductance in series with the bolted joint (D-32)."""
     if os.path.exists(_FEM):
         with open(_FEM) as f:
             c = json.load(f)
         VARIANTS["C: sensor on centre pot cup, guarded (D-12)"] = (
             c["c_elem"], c["g_contact_nominal"], c["g_contact_worst"], True)
+        for case, key in (("nominal", "g_contact_nominal"), ("worst", "g_contact_worst")):
+            g_pots = 2 / (1 / c[key] + 1 / G_JOINT)
+            CASES[case] = (*CASES[case][:5], g_pots)
         return True
     return False
 
@@ -162,12 +170,14 @@ def run():
                       "Max |error| with lag comp. (°C)", "Time constant (s)",
                       "Near-rail air bias vs air, max (°C)"], rows)
     md = ("### Thermal: rail reading error and housing temperature\n\n"
-          "Cases: nominal (good contact 0.20 W/K, grey cap α 0.35, 10 W/m²K wind, 0.004 m² sunlit) and "
-          "worst (rusty contact 0.05 W/K, rust body α 0.80, still air 3 W/m²K, 0.008 m² sunlit, "
+          "Cases: nominal (good contact 0.20 W/K, white cap / light-grey body α 0.35, 10 W/m²K wind, 0.004 m² sunlit) and "
+          "worst (rusty contact 0.05 W/K, weathered light-grey body α 0.50 (D-31), still air 3 W/m²K, 0.008 m² sunlit, "
           f"double internal leakage).\n\n{table}\n\n"
           f"Error budget: {p.INSTALLED_ERROR_BUDGET_C.value} °C installed = TMP117 "
           f"{p.TMP117_ACC_C.value} °C + mounting ≤ {sensor_budget:.1f} °C (linear sum).\n\n"
-          + ("Variant C uses geometry-derived contact conductance and capacity from the thermal FEM. "
+          + ("Variant C uses geometry-derived contact conductance and capacity from the thermal FEM; the "
+             f"guard couples to the rail through pots A and B bolted to it (D-32, joint {G_JOINT} W/K): "
+             f"{CASES['nominal'][5]:.2f} / {CASES['worst'][5]:.2f} W/K. "
              if fem else "Variant C uses the assumed lumped values (thermal FEM cache absent). ") +
           f"Lag compensation uses the firmware's compiled constant τ = {TAU_COMP_S:.0f} s; the minimax "
           f"optimum for these cases is {tc_best} s (worst error {worst_err(tc_best):.3f} °C vs "

@@ -6,8 +6,10 @@ models/fit.py (rail profile), models/mass.py (mass budget), parts_sourcing.json
 (South African suppliers and prices). Output: a single self-contained HTML file
 that loads three.js from a CDN and needs no other files.
 """
+import base64
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -16,6 +18,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "models"))
 import fit  # noqa: E402
 import geometry  # noqa: E402
 import mass  # noqa: E402
+import thermal  # noqa: E402
 
 # geometry 'source' key -> parts_sourcing.json id
 SOURCE_MAP = {
@@ -46,8 +49,10 @@ def main():
     by_id = {p["id"]: p for p in sourcing["parts"]}
     h, head, foot, web = fit.PROFILES["60E1 (UIC60)"]
     total_g = sum(gm for _, gm in mass.ITEMS)
+    mount = [c for c in thermal.run()["checks"] if c.req == "T1-01"]
+    mount_err = max(float(c.value.split()[0]) for c in mount)
     data = {
-        "meta": {"subtitle": "Tier 1 · desk-only design rev B", "mass": total_g},
+        "meta": {"subtitle": "Tier 1 · desk-only design rev B", "mass": total_g, "mountErr": f"{mount_err:.2f}"},
         "unit": geometry.as_json(),
         "rail": {"h": h, "head": head, "foot": foot, "web": web},
         "site": {"levels": [55, 60, 65]},
@@ -61,10 +66,18 @@ def main():
     with open(os.path.join(HERE, "template.html")) as f:
         html = f.read()
     html = html.replace("/*__DATA__*/null", json.dumps(data, ensure_ascii=False))
+    with open(os.path.join(HERE, "assets", "bigetron-logo.png"), "rb") as f:
+        html = html.replace("__LOGO__", "data:image/png;base64," + base64.b64encode(f.read()).decode())
     out = os.path.join(HERE, "rail-sensor-3d.html")
     with open(out, "w") as f:
         f.write(html)
-    print(f"wrote {out} ({len(html) / 1024:.0f} KB, {len(geometry.PARTS)} parts)")
+    # Published-page variant: the host supplies doctype/html/head/body, charset and viewport.
+    frag = re.sub(r"<!doctype html>\s*<html[^>]*>\s*<head>\s*", "", html, flags=re.I)
+    frag = re.sub(r'<meta charset="utf-8">\s*<meta name="viewport"[^>]*>\s*', "", frag)
+    frag = frag.replace("</head>\n<body>\n", "").replace("</body>\n</html>", "")
+    with open(os.path.join(HERE, "rail-sensor-3d.artifact.html"), "w") as f:
+        f.write(frag)
+    print(f"wrote {out} ({len(html) / 1024:.0f} KB, {len(geometry.PARTS)} parts) + artifact variant")
 
 
 if __name__ == "__main__":

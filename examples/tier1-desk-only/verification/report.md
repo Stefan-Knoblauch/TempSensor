@@ -88,27 +88,27 @@ Axisymmetric steady conduction through pot C (steel cup k 50, NdFeB k 9, epoxy g
 
 ### Thermal: rail reading error and housing temperature
 
-Cases: nominal (good contact 0.20 W/K, grey cap α 0.35, 10 W/m²K wind, 0.004 m² sunlit) and worst (rusty contact 0.05 W/K, rust body α 0.80, still air 3 W/m²K, 0.008 m² sunlit, double internal leakage).
+Cases: nominal (good contact 0.20 W/K, white cap / light-grey body α 0.35, 10 W/m²K wind, 0.004 m² sunlit) and worst (rusty contact 0.05 W/K, weathered light-grey body α 0.50 (D-31), still air 3 W/m²K, 0.008 m² sunlit, double internal leakage).
 
 | Case | Rail max (°C) | Housing max (°C) | Max |error| all day (°C) | Max |error| with lag comp. (°C) | Time constant (s) | Near-rail air bias vs air, max (°C) |
 |---|---|---|---|---|---|---|
 | A: sprung brass slug, unguarded / nominal | 69.0 | 49.0 | 2.067 | 2.014 | 30 | +4.2 |
-| A: sprung brass slug, unguarded / worst | 69.0 | 63.8 | 1.777 | 1.783 | 116 | +8.1 |
-| B: sprung brass slug, guarded / nominal | 69.0 | 50.0 | 0.314 | 0.362 | 30 | +4.5 |
-| B: sprung brass slug, guarded / worst | 69.0 | 64.1 | 0.605 | 0.544 | 116 | +8.2 |
-| C: sensor on centre pot cup, guarded (D-12) / nominal | 69.0 | 50.0 | 0.284 | 0.252 | 68 | +4.5 |
-| C: sensor on centre pot cup, guarded (D-12) / worst | 69.0 | 64.1 | 0.429 | 0.235 | 126 | +8.2 |
+| A: sprung brass slug, unguarded / worst | 69.0 | 57.9 | 3.680 | 3.624 | 116 | +6.6 |
+| B: sprung brass slug, guarded / nominal | 69.0 | 50.0 | 0.209 | 0.311 | 30 | +4.5 |
+| B: sprung brass slug, guarded / worst | 69.0 | 58.8 | 0.567 | 0.468 | 116 | +6.8 |
+| C: sensor on centre pot cup, guarded (D-12) / nominal | 69.0 | 50.0 | 0.225 | 0.218 | 68 | +4.5 |
+| C: sensor on centre pot cup, guarded (D-12) / worst | 69.0 | 58.8 | 0.379 | 0.204 | 126 | +6.8 |
 
 Error budget: 0.5 °C installed = TMP117 0.2 °C + mounting ≤ 0.3 °C (linear sum).
 
-Variant C uses geometry-derived contact conductance and capacity from the thermal FEM. Lag compensation uses the firmware's compiled constant τ = 150 s; the minimax optimum for these cases is 130 s (worst error 0.228 °C vs 0.252 °C at the firmware value).
+Variant C uses geometry-derived contact conductance and capacity from the thermal FEM; the guard couples to the rail through pots A and B bolted to it (D-32, joint 1.0 W/K): 0.52 / 0.32 W/K. Lag compensation uses the firmware's compiled constant τ = 150 s; the minimax optimum for these cases is 130 s (worst error 0.199 °C vs 0.218 °C at the firmware value).
 
 | Req | Check | Value | Limit | Result |
 |---|---|---|---|---|
-| T1-01 | Mounting error with lag compensation, C: sensor on centre pot cup, guarded (D-12) / nominal | 0.252 °C | <= 0.3 °C | PASS |
+| T1-01 | Mounting error with lag compensation, C: sensor on centre pot cup, guarded (D-12) / nominal | 0.218 °C | <= 0.3 °C | PASS |
 | T1-08 | Housing peak temperature, C: sensor on centre pot cup, guarded (D-12) / nominal | 50.0 °C | <= 85 °C | PASS |
-| T1-01 | Mounting error with lag compensation, C: sensor on centre pot cup, guarded (D-12) / worst | 0.235 °C | <= 0.3 °C | PASS |
-| T1-08 | Housing peak temperature, C: sensor on centre pot cup, guarded (D-12) / worst | 64.1 °C | <= 85 °C | PASS |
+| T1-01 | Mounting error with lag compensation, C: sensor on centre pot cup, guarded (D-12) / worst | 0.204 °C | <= 0.3 °C | PASS |
+| T1-08 | Housing peak temperature, C: sensor on centre pot cup, guarded (D-12) / worst | 58.8 °C | <= 85 °C | PASS |
 
 ### Magnetostatic FEM: pull vs gap and attachment sensing
 
@@ -306,7 +306,7 @@ test_gap_detection (test_codec.Ingest.test_gap_detection) ... ok
 test_overlapping_lora_batches_and_duplicates (test_codec.Ingest.test_overlapping_lora_batches_and_duplicates) ... ok
 
 ----------------------------------------------------------------------
-Ran 10 tests in 0.001s
+Ran 10 tests in 0.002s
 
 OK
 ```
