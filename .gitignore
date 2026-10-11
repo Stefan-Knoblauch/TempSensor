@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+examples/tier1-desk-only/firmware/build/
+*.o

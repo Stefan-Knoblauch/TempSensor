@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" font-family="sans-serif" font-size="12">
+<rect width="100%" height="100%" fill="white"/>
+<polygon points="24.8,380.0 215.2,380.0 215.2,364.2 130.5,348.5 130.5,215.8 171.0,206.8 171.0,155.0 69.0,155.0 69.0,206.8 109.5,215.8 109.5,348.5 24.8,364.2" fill="#b9bec4" stroke="#333"/>
+<rect x="130.5" y="218.0" width="57.0" height="93.0" fill="#8a4b2a" stroke="#222"/>
+<rect x="130.5" y="311.0" width="15.0" height="37.5" fill="#5a5a5a" stroke="#222"/>
+<text x="30" y="20" font-weight="bold">SA 48 kg/m</text>
+<text x="30" y="36">window 88 mm, hook set 25 mm</text>
+<polygon points="315.0,380.0 525.0,380.0 525.0,362.7 432.0,345.4 432.0,199.3 473.4,189.4 473.4,132.5 366.6,132.5 366.6,189.4 408.0,199.3 408.0,345.4 315.0,362.7" fill="#b9bec4" stroke="#333"/>
+<rect x="432.0" y="201.6" width="57.0" height="93.0" fill="#8a4b2a" stroke="#222"/>
+<rect x="432.0" y="294.6" width="15.0" height="50.8" fill="#5a5a5a" stroke="#222"/>
+<text x="330" y="20" font-weight="bold">SA 57 kg/m</text>
+<text x="330" y="36">window 97 mm, hook set 34 mm</text>
+<polygon points="607.5,380.0 832.5,380.0 832.5,361.9 732.4,343.9 732.4,191.7 774.0,181.3 774.0,122.0 666.0,122.0 666.0,181.3 707.6,191.7 707.6,343.9 607.5,361.9" fill="#b9bec4" stroke="#333"/>
+<rect x="732.4" y="193.9" width="57.0" height="93.0" fill="#8a4b2a" stroke="#222"/>
+<rect x="732.4" y="286.9" width="15.0" height="57.0" fill="#5a5a5a" stroke="#222"/>
+<text x="630" y="20" font-weight="bold">60E1 (UIC60)</text>
+<text x="630" y="36">window 101 mm, hook set 38 mm</text>
+<text x="10" y="408" fill="#444">Field side to the right. Brown: unit body; grey bar: hook slider resting on foot top. Simplified sections, not to drawing accuracy.</text>
+</svg>
