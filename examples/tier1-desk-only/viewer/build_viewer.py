@@ -68,9 +68,20 @@ def main():
     html = html.replace("/*__DATA__*/null", json.dumps(data, ensure_ascii=False))
     with open(os.path.join(HERE, "assets", "bigetron-logo.png"), "rb") as f:
         html = html.replace("__LOGO__", "data:image/png;base64," + base64.b64encode(f.read()).decode())
+    logo_uri = "data:image/png;base64," + base64.b64encode(open(os.path.join(HERE, "assets", "bigetron-logo.png"), "rb").read()).decode()
+    site = html.replace("<!--__SIGNOUT__-->", '<a class="signout" href="/logout">Sign out</a>')
+    html = html.replace("<!--__SIGNOUT__-->", "")
     out = os.path.join(HERE, "rail-sensor-3d.html")
     with open(out, "w") as f:
         f.write(html)
+    # Vercel site at the repository root: index.html behind middleware.js, plus login.html
+    repo = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
+    with open(os.path.join(repo, "index.html"), "w") as f:
+        f.write(site)
+    with open(os.path.join(HERE, "login-template.html")) as f:
+        login = f.read().replace("__LOGO__", logo_uri)
+    with open(os.path.join(repo, "login.html"), "w") as f:
+        f.write(login)
     # Published-page variant: the host supplies doctype/html/head/body, charset and viewport.
     frag = re.sub(r"<!doctype html>\s*<html[^>]*>\s*<head>\s*", "", html, flags=re.I)
     frag = re.sub(r'<meta charset="utf-8">\s*<meta name="viewport"[^>]*>\s*', "", frag)

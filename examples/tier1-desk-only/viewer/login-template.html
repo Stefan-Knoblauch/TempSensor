@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Rail Sensor Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+/* Sign-in for the Rail Sensor Explorer. Light bigetron look: navy text, logo blue action. */
+:root {
+  color-scheme: light;
+  --bg: #f3f6f9; --surface: #ffffff; --line: #dbe3eb; --text: #16365c; --muted: #5f7286;
+  --brand: #3d8cc6; --brand-dark: #2f74a8; --crit: #df4430;
+  --f-display: "Lexend", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; color: var(--text); font: 16px/1.5 var(--f-body);
+  background: radial-gradient(120% 80% at 50% 0%, #ffffff 0%, var(--bg) 55%, #e3eaf2 100%);
+  display: grid; place-items: center; padding: 24px 16px;
+}
+.card { width: 100%; max-width: 400px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 32px 28px 26px; box-shadow: 0 18px 50px rgba(22,54,92,.12); }
+.logo { display: block; width: 190px; max-width: 70%; height: auto; margin: 0 auto 18px; }
+h1 { margin: 0; text-align: center; font: 600 20px/1.2 var(--f-display); letter-spacing: -.01em; }
+.sub { margin: 6px 0 24px; text-align: center; color: var(--muted); font-size: 14px; }
+form { display: grid; gap: 14px; }
+label { display: grid; gap: 6px; font: 500 13px var(--f-display); color: var(--muted); }
+input { font: inherit; color: var(--text); padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfd; }
+input:focus { outline: 2px solid var(--brand); outline-offset: 1px; border-color: var(--brand); }
+button { margin-top: 6px; font: 600 15px var(--f-display); color: #fff; background: var(--brand); border: 0; border-radius: 999px; padding: 12px; cursor: pointer; }
+button:hover { background: var(--brand-dark); }
+button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.err { margin: 0; padding: 9px 12px; border-radius: 10px; background: #fdecea; color: var(--crit); font-size: 14px; }
+.foot { margin: 20px 0 0; text-align: center; color: var(--muted); font-size: 12px; }
+.arcs { display: flex; justify-content: center; gap: 6px; margin-top: 22px; }
+.arcs i { width: 8px; height: 8px; border-radius: 50%; }
+</style>
+</head>
+<body>
+<main class="card">
+  <img class="logo" src="__LOGO__" alt="bigetron — Measure. Monitor. Optimise." width="190" height="66">
+  <h1>Rail temperature sensor</h1>
+  <p class="sub">Sign in to open the Tier 1 design explorer.</p>
+  <form method="post" action="/login" autocomplete="on">
+    <p class="err" id="err" hidden>That username and password did not match. Try again.</p>
+    <label for="username">Username<input id="username" name="username" autocomplete="username" required autofocus></label>
+    <label for="password">Password<input id="password" name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit">Sign in</button>
+  </form>
+  <div class="arcs" aria-hidden="true"><i style="background:#2c7c86"></i><i style="background:#8bc34a"></i><i style="background:#f08a2c"></i><i style="background:#e0442e"></i></div>
+  <p class="foot">Tier 1 · desk-only design rev B</p>
+</main>
+<script>
+  if (new URLSearchParams(location.search).has('e')) document.getElementById('err').hidden = false;
+</script>
+</body>
+</html>

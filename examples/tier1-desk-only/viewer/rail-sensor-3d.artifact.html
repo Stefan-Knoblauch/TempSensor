@@ -42,6 +42,8 @@ button { font: inherit; color: inherit; }
 .seg { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--surface); }
 .seg button { background: none; border: 0; padding: 6px 12px; cursor: pointer; font: 600 12px var(--f-mono); color: var(--muted); }
 .seg button[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); }
+.signout { font: 500 13px var(--f-display); color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 999px; }
+.signout:hover { color: var(--brand); background: var(--bg); }
 
 /* main */
 .main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; min-height: 0; }
@@ -136,6 +138,7 @@ tr.dim td { opacity: .4; }
     <div class="seg" role="group" aria-label="Radio version">
       <button id="sku-lora" aria-pressed="true">LoRa</button><button id="sku-ltem" aria-pressed="false">LTE-M</button>
     </div>
+    
   </header>
 
   <div class="main" id="view-3d">
