@@ -10,7 +10,7 @@ const PASS = process.env.VIEWER_PASS || 'temp';
 const SECRET = process.env.VIEWER_SECRET || 'bigetron-rail-sensor';
 const COOKIE = 'bt_session';
 const MAX_AGE = 60 * 60 * 12; // 12 h
-const PUBLIC = new Set(['/login.html', '/favicon.ico']);
+const PUBLIC = new Set(['/login.html', '/favicon.ico', '/api/login']);
 
 // Same effect as next() from @vercel/functions: continue to the requested file.
 const next = () => new Response(null, { headers: { 'x-middleware-next': '1' } });
