@@ -98,6 +98,7 @@ input[type=range] { width: 100%; accent-color: var(--brand); }
 .btn:hover { border-color: var(--brand); color: var(--brand); }
 a { color: var(--brand); }
 .note { font-size: 13px; color: var(--muted); }
+.conds { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }
 .arcs { display: inline-flex; gap: 3px; vertical-align: middle; }
 .arcs i { width: 8px; height: 8px; border-radius: 50%; display: block; }
 
@@ -561,6 +562,27 @@ function buildLine() {
   S.add(L.sun, L.sun.target);
   L.hemi = new THREE.HemisphereLight('#bcd2ec', '#9a5a32', .55); S.add(L.hemi);
   S.fog = new THREE.FogExp2('#e9c9a1', .00028);
+  L.moon = new THREE.DirectionalLight('#9fb6ff', 0); L.moon.position.set(-60, 120, 80); S.add(L.moon, L.moon.target);
+  {                                                     // star field (night, clear sky)
+    const n = 3000, p = new Float32Array(n * 3), rs = rng(77);
+    for (let i = 0; i < n; i++) {
+      const u = rs(), v = rs() * .95, th = u * Math.PI * 2, ph = Math.acos(1 - v);   // upper hemisphere
+      p.set([Math.sin(ph) * Math.cos(th) * 300000, Math.cos(ph) * 300000, Math.sin(ph) * Math.sin(th) * 300000], i * 3);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+    L.stars = new THREE.Points(g, new THREE.PointsMaterial({ color: '#ffffff', size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false }));
+    S.add(L.stars);
+  }
+  {                                                     // rain streaks in a box that follows the camera
+    const n = 7000, p = new Float32Array(n * 6), rr = rng(5);
+    for (let i = 0; i < n; i++) {
+      const x = (rr() - .5) * 40, y = rr() * 30 - 5, z = (rr() - .5) * 40;
+      p.set([x, y, z, x + .06, y - .7, z + .02], i * 6);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+    L.rain = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#c9d3de', transparent: true, opacity: .45, depthWrite: false }));
+    L.rain.frustumCulled = false; L.rain.visible = false; S.add(L.rain);
+  }
 
   // ground: Kalahari sand, gentle swells away from the formation
   const sand = canvasTex(512, (c, n) => speckle(c, n, '#a8653c', [['#8e4f2c', 2800], ['#c4895a', 2600], ['#6e3a1f', 700], ['#d9b48a', 500]], .6, 2.6, rng(3)), [900, 900]);
@@ -578,9 +600,13 @@ function buildLine() {
   }
   gGeo.setAttribute('color', new THREE.BufferAttribute(col, 3)); gGeo.computeVertexNormals();
   const ground = new THREE.Mesh(gGeo, new THREE.MeshStandardMaterial({ map: sand, vertexColors: true, roughness: .97 }));
+  L.wet = [];
+  const wetable = (m, wetRough, darken) => { L.wet.push({ m, dry: m.roughness, wetRough, col: m.color.clone(), darken }); return m; };
+  wetable(ground.material, .8, .62);
   ground.receiveShadow = true; S.add(ground);
   const road = new THREE.Mesh(new THREE.PlaneGeometry(1700, 3.6), new THREE.MeshStandardMaterial({
     map: canvasTex(256, (c, n) => speckle(c, n, '#b59b78', [['#9a7f5d', 1400], ['#d2bc98', 1200], ['#7d6a52', 300]], .5, 1.8, rng(11)), [400, 1]), roughness: 1 }));
+  wetable(road.material, .7, .65);
   road.rotation.x = -Math.PI / 2; road.position.set(0, -.47, 9); road.receiveShadow = true; S.add(road);
 
   // distant flat-topped hills
@@ -624,7 +650,7 @@ function buildLine() {
   const ballastTex = canvasTex(512, (c, n) => speckle(c, n, '#7b766e', [['#5c5852', 3000], ['#9b958b', 3000], ['#433f3a', 900], ['#b4ada1', 500]], 1, 3.2, rng(9)), [LEN / 2, 3]);
   const bal = new THREE.Shape([[-3.4, -.55], [3.4, -.55], [1.75, -.03], [-1.75, -.03]].map(([x, y]) => new THREE.Vector2(x, y)));
   const ballast = new THREE.Mesh(alongX(bal, LEN), new THREE.MeshStandardMaterial({ map: ballastTex, roughness: .95, color: '#9a9184' }));
-  ballast.receiveShadow = true; S.add(ballast);
+  ballast.receiveShadow = true; S.add(ballast); wetable(ballast.material, .55, .65);
   // concrete sleepers every 0.6 m
   const concrete = canvasTex(256, (c, n) => speckle(c, n, '#b9b4aa', [['#a19c92', 900], ['#cdc8be', 900]], .4, 1.4, rng(5)), [1, 4]);
   const slGeo = new THREE.BoxGeometry(.25, .2, 2.2); slGeo.translate(0, -.1, 0);
@@ -643,9 +669,10 @@ function buildLine() {
     }
   }
   for (const m of [sleepers, pads, clips]) { m.castShadow = m.receiveShadow = true; S.add(m); }
+  wetable(sleepers.material, .5, .7);
   // rails: 60 kg/m section, Cape gauge 1067 mm
   const railGeo = alongX(railShape(R60, RS), LEN, { steps: 1, curveSegments: 1 });
-  const railMat = new THREE.MeshStandardMaterial({ color: '#5f4a3d', metalness: .5, roughness: .6 });
+  const railMat = wetable(new THREE.MeshStandardMaterial({ color: '#5f4a3d', metalness: .5, roughness: .6 }), .25, .8);
   const headMat = new THREE.MeshStandardMaterial({ color: '#d4d7da', metalness: 1, roughness: .16 });
   for (const s of [-1, 1]) {
     const rl = new THREE.Mesh(railGeo, railMat); rl.position.set(0, .012, s * railZ); rl.castShadow = rl.receiveShadow = true; S.add(rl);
@@ -705,64 +732,129 @@ function buildLine() {
   L.train = buildTrain(); S.add(L.train.group);
 }
 
+function rod(a, b, r, mat, seg = 8) {          // cylinder between two points
+  const d = b.clone().sub(a), m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, d.length(), seg), mat);
+  m.position.copy(a).add(b).multiplyScalar(.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+  return m;
+}
 function buildTrain() {
   const group = new THREE.Group();
-  const deck = 1.25;
-  const locoLen = 21.6, locoW = 3.05, locoH = 3.15;
+  const deck = 1.25, locoLen = 21.6, locoW = 3.05, locoH = 3.15;
   const prof = new THREE.Shape([[0, 0], [locoLen, 0], [locoLen, locoH * .55], [locoLen - .9, locoH], [.9, locoH], [0, locoH * .55]].map(([x, y]) => new THREE.Vector2(x, y)));
   const bodyGeo = new THREE.ExtrudeGeometry(prof, { depth: locoW, bevelEnabled: true, bevelSize: .06, bevelThickness: .06, bevelSegments: 2 });
   bodyGeo.translate(-locoLen / 2, deck, -locoW / 2);
-  const locoMat = new THREE.MeshPhysicalMaterial({ color: '#8f2a22', roughness: .45, clearcoat: .5 });
+  const locoMat = new THREE.MeshPhysicalMaterial({ color: '#8f2a22', roughness: .42, clearcoat: .6, clearcoatRoughness: .25 });
   const stripe = new THREE.MeshStandardMaterial({ color: '#e6b33a', roughness: .5 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: '#1d2a33', roughness: .05, metalness: .3, clearcoat: 1 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: '#1d2a33', roughness: .05, metalness: .3, clearcoat: 1, emissive: '#ffd9a0', emissiveIntensity: 0 });
   const dark = new THREE.MeshStandardMaterial({ color: '#1f1f20', roughness: .7, metalness: .3 });
+  const grey = new THREE.MeshStandardMaterial({ color: '#6c6f72', roughness: .55, metalness: .45 });
   const wheel = new THREE.MeshStandardMaterial({ color: '#3a3836', metalness: .8, roughness: .45 });
+  const lampMat = new THREE.MeshStandardMaterial({ color: '#fff6dc', emissive: '#fff1c4', emissiveIntensity: .2, roughness: .2 });
+  const markerMat = new THREE.MeshStandardMaterial({ color: '#ff3b2f', emissive: '#ff2a1a', emissiveIntensity: .1 });
+  const insul = new THREE.MeshStandardMaterial({ color: '#7b3f28', roughness: .35 });
   const locos = [];
   const bogie = (len, axles) => {
     const b = new THREE.Group();
-    const fr = new THREE.Mesh(new THREE.BoxGeometry(len, .55, 2.5), dark); fr.position.y = .78; b.add(fr);
-    for (let a = 0; a < axles; a++) for (const s of [-1, 1]) {
-      const w = new THREE.Mesh(new THREE.CylinderGeometry(.53, .53, .14, 28), wheel); w.rotation.x = Math.PI / 2;
-      w.position.set(-len / 2 + .55 + a * (len - 1.1) / Math.max(1, axles - 1), .53, s * (GAUGE / 2 + .02)); b.add(w);
+    for (const s of [-1, 1]) { const side = new THREE.Mesh(new THREE.BoxGeometry(len, .45, .14), dark); side.position.set(0, .72, s * 1.05); b.add(side); }
+    const bol = new THREE.Mesh(new THREE.BoxGeometry(.6, .3, 2.2), dark); bol.position.y = .85; b.add(bol);
+    for (let a = 0; a < axles; a++) {
+      const x = -len / 2 + .55 + a * (len - 1.1) / Math.max(1, axles - 1);
+      for (const s of [-1, 1]) {
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(.53, .53, .14, 28), wheel); w.rotation.x = Math.PI / 2;
+        w.position.set(x, .53, s * (GAUGE / 2 + .02)); b.add(w);
+        const spring = new THREE.Mesh(new THREE.CylinderGeometry(.12, .12, .3, 10), grey); spring.position.set(x, .98, s * 1.05); b.add(spring);
+      }
+      const axle = new THREE.Mesh(new THREE.CylinderGeometry(.08, .08, GAUGE + .3, 10), grey); axle.rotation.x = Math.PI / 2; axle.position.set(x, .53, 0); b.add(axle);
     }
     return b;
+  };
+  const pantograph = (x, raised) => {
+    const p = new THREE.Group(), y0 = deck + locoH + .25;
+    for (const z of [-.45, .45]) for (const dx of [-.5, .5]) { const ins = new THREE.Mesh(new THREE.CylinderGeometry(.07, .09, .32, 12), insul); ins.position.set(x + dx, y0 - .06, z); p.add(ins); }
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.5, .1, 1.1), dark); base.position.set(x, y0 + .12, 0); p.add(base);
+    const top = raised ? 5.6 - .04 : y0 + .45;
+    const B = new THREE.Vector3(x + .6, y0 + .18, 0), K = new THREE.Vector3(x - (raised ? 1.25 : 1.9), raised ? y0 + (top - y0) * .5 : y0 + .3, 0), H = new THREE.Vector3(x + .2, top, 0);
+    p.add(rod(B, K, .045, dark));
+    for (const z of [-.3, .3]) p.add(rod(K, H.clone().setZ(z), .03, dark));
+    const head = new THREE.Mesh(new THREE.BoxGeometry(.1, .05, 1.9), new THREE.MeshStandardMaterial({ color: '#b9bbbd', metalness: .85, roughness: .3 }));
+    head.position.copy(H); p.add(head);
+    for (const z of [-.95, .95]) { const horn = rod(H.clone().setZ(z), H.clone().setZ(z * 1.12).setY(H.y - .18), .02, dark); p.add(horn); }
+    return p;
   };
   for (let i = 0; i < 3; i++) {
     const g = new THREE.Group();
     g.add(new THREE.Mesh(bodyGeo, locoMat));
+    // underframe, fuel tank, buffer beams, couplers
+    const uf = new THREE.Mesh(new THREE.BoxGeometry(locoLen - .4, .3, locoW - .1), dark); uf.position.y = deck - .12; g.add(uf);
+    const tank = new THREE.Mesh(new THREE.BoxGeometry(5.2, .55, 2.3), grey); tank.position.set(-3.5, deck - .5, 0); g.add(tank);
+    const tank2 = tank.clone(); tank2.position.x = 3.5; g.add(tank2);
     for (const s of [-1, 1]) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(.25, .55, locoW), stripe); beam.position.set(s * (locoLen / 2 + .05), deck - .2, 0); g.add(beam);
+      const coup = new THREE.Mesh(new THREE.BoxGeometry(.5, .25, .3), dark); coup.position.set(s * (locoLen / 2 + .3), deck - .3, 0); g.add(coup);
       const st = new THREE.Mesh(new THREE.BoxGeometry(locoLen * .98, .22, .02), stripe); st.position.set(0, deck + .45, s * (locoW / 2 + .07)); g.add(st);
-      const win = new THREE.Mesh(new THREE.BoxGeometry(.05, .8, locoW * .78), glass); win.position.set(s * (locoLen / 2 - .52), deck + locoH * .74, 0); win.rotation.z = s * -.5; g.add(win);
+      // windscreen lying on the sloped cab nose (slope runs from x = L/2 at 0.55 H to L/2 - 0.9 at H)
+      const ang = Math.atan2(.9, locoH * .45), nrm = new THREE.Vector2(locoH * .45, .9).normalize();
+      const win = new THREE.Mesh(new THREE.BoxGeometry(.04, 1.0, locoW * .8), glass);
+      win.position.set(s * (locoLen / 2 - .45 + nrm.x * .04), deck + locoH * .775 + nrm.y * .04, 0); win.rotation.z = s * ang; g.add(win);
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(.03, 1.12, locoW * .86), dark);
+      frame.position.copy(win.position).add(new THREE.Vector3(-s * nrm.x * .02, -nrm.y * .02, 0)); frame.rotation.z = s * ang; g.add(frame);
       const nose = new THREE.Mesh(new THREE.BoxGeometry(.04, .5, locoW * .9), stripe); nose.position.set(s * (locoLen / 2 + .07), deck + .35, 0); g.add(nose);
+      for (const z of [-.95, .95]) {                       // headlamps and red markers on each cab end
+        const lamp = new THREE.Mesh(new THREE.CylinderGeometry(.13, .13, .08, 20), lampMat); lamp.rotation.z = Math.PI / 2; lamp.position.set(s * (locoLen / 2 + .1), deck + 1.05, z); g.add(lamp);
+        const mk = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, .06, 14), markerMat); mk.rotation.z = Math.PI / 2; mk.position.set(s * (locoLen / 2 + .1), deck + 1.05, z * .62); g.add(mk);
+      }
+      for (const side of [-1, 1]) {                      // cab side windows and doors
+        const sw = new THREE.Mesh(new THREE.BoxGeometry(1.0, .65, .03), glass); sw.position.set(s * (locoLen / 2 - 1.6), deck + locoH * .72, side * (locoW / 2 + .07)); g.add(sw);
+        const door = new THREE.Mesh(new THREE.BoxGeometry(.75, 1.7, .02), new THREE.MeshStandardMaterial({ color: '#7a231c', roughness: .5 })); door.position.set(s * (locoLen / 2 - 2.6), deck + 1.25, side * (locoW / 2 + .075)); g.add(door);
+      }
     }
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(locoLen - 2.6, .25, locoW * .8), new THREE.MeshStandardMaterial({ color: '#6c6f72', roughness: .6, metalness: .4 })); roof.position.y = deck + locoH + .12; g.add(roof);
-    // single-arm pantograph raised to the contact wire
-    const panY = deck + locoH + .25, armLen = 5.6 - panY;
-    const pb = new THREE.Mesh(new THREE.BoxGeometry(1.4, .12, 1.2), dark); pb.position.set(-4, panY + .06, 0); g.add(pb);
-    const lower = new THREE.Mesh(new THREE.CylinderGeometry(.04, .04, armLen * 1.1, 8), dark); lower.position.set(-3.4, panY + armLen * .45, 0); lower.rotation.z = -.62; g.add(lower);
-    const upper = new THREE.Mesh(new THREE.CylinderGeometry(.03, .03, armLen * 1.05, 8), dark); upper.position.set(-3.3, panY + armLen * .62, 0); upper.rotation.z = .55; g.add(upper);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(.12, .06, 1.9), new THREE.MeshStandardMaterial({ color: '#a9abad', metalness: .8, roughness: .3 })); head.position.set(-3.9, 5.6 - .03, 0); g.add(head);
+    for (const side of [-1, 1]) for (let k = 0; k < 6; k++) {   // engine-room louvres
+      const lv = new THREE.Mesh(new THREE.BoxGeometry(1.4, .9, .02), grey); lv.position.set(-5.6 + k * 2.25, deck + 1.9, side * (locoW / 2 + .07)); g.add(lv);
+    }
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(locoLen - 2.6, .25, locoW * .8), grey); roof.position.y = deck + locoH + .12; g.add(roof);
+    for (let k = 0; k < 3; k++) { const fan = new THREE.Mesh(new THREE.CylinderGeometry(.42, .42, .12, 24), dark); fan.position.set(-1.6 + k * 1.6, deck + locoH + .3, 0); g.add(fan); }
+    g.add(pantograph(5.6, true));                          // trailing pantograph up, leading one down
+    g.add(pantograph(-5.6, false));
     for (const bx of [-7, 0, 7]) { const bg = bogie(3.6, 2); bg.position.x = bx; g.add(bg); }
     g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     locos.push(g); group.add(g);
   }
+  // headlight beam on the leading cab (train runs towards -x)
+  const head = new THREE.SpotLight('#fff1d0', 0, 320, .32, .45, 1.2);
+  head.position.set(-locoLen / 2 - .2, deck + 1.05, 0); head.target.position.set(-locoLen / 2 - 60, 0, 0);
+  locos[0].add(head, head.target);
   // wagons: one merged geometry with material groups, instanced
-  const wl = 10.2, ww = 2.95, wh = 2.25;
-  const body = new THREE.BoxGeometry(wl, wh, ww); body.translate(0, 1.15 + wh / 2, 0);
-  const ore = new THREE.SphereGeometry(1, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2); ore.scale(wl * .46, .55, ww * .44); ore.translate(0, 1.15 + wh, 0);
-  const parts = [body, ore];
-  for (const bx of [-wl / 2 + 1.6, wl / 2 - 1.6]) {
-    const fr = new THREE.BoxGeometry(2.4, .5, 2.4); fr.translate(bx, .75, 0); parts.push(fr);
-    for (const ax of [-.85, .85]) for (const s of [-1, 1]) { const wg = new THREE.CylinderGeometry(.46, .46, .13, 20); wg.rotateX(Math.PI / 2); wg.translate(bx + ax, .46, s * (GAUGE / 2 + .02)); parts.push(wg); }
+  const wl = 10.2, ww = 2.95, wh = 2.25, wb = 1.15;
+  const body = new THREE.BoxGeometry(wl, wh, ww); body.translate(0, wb + wh / 2, 0);
+  const ore = new THREE.SphereGeometry(1, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2); ore.scale(wl * .46, .55, ww * .44); ore.translate(0, wb + wh, 0);
+  const steelParts = [];
+  for (let k = 0; k <= 8; k++) for (const s of [-1, 1]) {                       // side stiffeners
+    const rib = new THREE.BoxGeometry(.1, wh - .1, .08); rib.translate(-wl / 2 + .2 + k * (wl - .4) / 8, wb + wh / 2, s * (ww / 2 + .04)); steelParts.push(rib);
   }
-  const merged = mergeGeometries([body, ore, mergeGeometries(parts.slice(2))], true);
+  for (const s of [-1, 1]) {
+    const rim = new THREE.BoxGeometry(wl + .06, .14, .12); rim.translate(0, wb + wh - .03, s * (ww / 2 + .04)); steelParts.push(rim);
+    const end = new THREE.BoxGeometry(.12, wh + .1, ww + .1); end.translate(s * (wl / 2 + .02), wb + wh / 2, 0); steelParts.push(end);
+  }
+  const under = [];
+  const sill = new THREE.BoxGeometry(wl, .3, .5); sill.translate(0, wb - .12, 0); under.push(sill);
+  for (const s of [-1, 1]) { const cp = new THREE.BoxGeometry(.6, .22, .28); cp.translate(s * (wl / 2 + .3), .95, 0); under.push(cp); }
+  for (const bx of [-wl / 2 + 1.6, wl / 2 - 1.6]) {
+    for (const s of [-1, 1]) { const sf = new THREE.BoxGeometry(2.4, .42, .14); sf.translate(bx, .7, s * 1.02); under.push(sf); }
+    const bol = new THREE.BoxGeometry(.5, .28, 2.2); bol.translate(bx, .85, 0); under.push(bol);
+    for (const ax of [-.85, .85]) {
+      for (const s of [-1, 1]) { const wg = new THREE.CylinderGeometry(.46, .46, .13, 20); wg.rotateX(Math.PI / 2); wg.translate(bx + ax, .46, s * (GAUGE / 2 + .02)); under.push(wg); }
+      const axle = new THREE.CylinderGeometry(.07, .07, GAUGE + .3, 8); axle.rotateX(Math.PI / 2); axle.translate(bx + ax, .46, 0); under.push(axle);
+    }
+  }
+  const merged = mergeGeometries([mergeGeometries([body, ...steelParts]), ore, mergeGeometries(under)], true);
   const wagons = new THREE.InstancedMesh(merged, [
-    new THREE.MeshStandardMaterial({ color: '#5a4a40', roughness: .8, metalness: .3 }),
+    new THREE.MeshStandardMaterial({ color: '#5d4b40', roughness: .75, metalness: .35 }),
     new THREE.MeshStandardMaterial({ color: '#6b2a1a', roughness: 1 }),
     dark], 60);
   wagons.castShadow = wagons.receiveShadow = true; group.add(wagons);
   group.visible = false;
-  return { group, locos, wagons, locoLen, wl, x: 190, running: false, speed: 17 };
+  return { group, locos, wagons, locoLen, wl, x: 190, running: false, speed: 17, headlight: head, lampMat, markerMat, glass };
 }
 function placeTrain(T) {            // runs toward -x (loaded, towards Saldanha); T.x is the nose
   let x = T.x;
@@ -775,12 +867,16 @@ function placeTrain(T) {            // runs toward -x (loaded, towards Saldanha)
 
 /* sun, sky and the simulated hot design day (thermal-model boundary conditions) */
 const LVL = DATA.site.levels;   // example site levels (D-21)
+let weather = 'sun';
 function railAt(h) {
-  const air = 35 + 10 * Math.cos(2 * Math.PI * (h - 15) / 24);
+  // hot design day from the thermal model; rain cuts the sun to ~15 % and cools the air ~6 degC
+  const rain = weather === 'rain';
+  const air = 35 + 10 * Math.cos(2 * Math.PI * (h - 15) / 24) - (rain ? 6 : 0);
   const hl = h - 1, sl = hl >= 6 && hl <= 18 ? Math.max(0, Math.sin(Math.PI * (hl - 6) / 12)) : 0;
-  return { air, rail: air - 1 + 26 * sl };
+  return { air, rail: air - 1 + 26 * sl * (rain ? .15 : 1) };
 }
 let hour = 14.0, envTimer = null;
+const isNight = (h) => h < 6 || h >= 19;
 function setHour(h) {
   hour = h;
   const elev = Math.max(-4, 62 * Math.sin(Math.PI * (h - 6) / 12));
@@ -788,20 +884,47 @@ function setHour(h) {
   const phi = THREE.MathUtils.degToRad(90 - elev), theta = THREE.MathUtils.degToRad(az + 90);
   const sunV = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
   L.sky.material.uniforms.sunPosition.value.copy(sunV);
-  const day = clamp(elev / 18);
-  L.sun.intensity = 5.2 * day; L.sun.color.set('#ffd2a0').lerp(new THREE.Color('#fff4e4'), clamp(elev / 45));
+  const day = clamp(elev / 18), night = clamp(-elev / 10), rain = weather === 'rain';
+  const su = L.sky.material.uniforms;
+  su.turbidity.value = rain ? 20 : 4.5; su.rayleigh.value = rain ? .35 : 2.2;
+  su.mieCoefficient.value = rain ? .03 : .004; su.mieDirectionalG.value = rain ? .6 : .86;
+  L.sun.intensity = 5.2 * day * (rain ? .3 : 1);
+  L.sun.color.set('#ffd2a0').lerp(new THREE.Color('#fff4e4'), clamp(elev / 45));
   L.sun.position.copy(L.controls.target).addScaledVector(sunV, 120); L.sun.target.position.copy(L.controls.target);
-  L.hemi.intensity = .2 + .7 * day;
-  L.scene.fog.color.set('#2a2f3a').lerp(new THREE.Color('#e7c39a'), clamp((elev + 4) / 16)).lerp(new THREE.Color('#d9d4cc'), clamp((elev - 25) / 40) * .5);
-  renderer.toneMappingExposure = .28 + .27 * clamp((elev + 4) / 20);
+  L.hemi.intensity = (.2 + .7 * day) * (rain ? 2.6 : 1) + .7 * night * (rain ? .5 : 1);
+  L.hemi.color.set(night > .5 ? '#7d8fb8' : rain ? '#b4bcc6' : '#bcd2ec'); L.hemi.groundColor.set(rain ? '#5a4a40' : '#9a5a32');
+  L.moon.intensity = night * (rain ? .3 : 2.4);
+  L.stars.material.opacity = rain ? 0 : night * .95;
+  const fog = new THREE.Color('#141a26').lerp(new THREE.Color('#e7c39a'), clamp((elev + 4) / 16)).lerp(new THREE.Color('#d9d4cc'), clamp((elev - 25) / 40) * .5);
+  if (rain) fog.lerp(new THREE.Color('#1c2129').lerp(new THREE.Color('#8e959c'), clamp((elev + 4) / 16)), .85);
+  L.scene.fog.color.copy(fog); L.scene.fog.density = rain ? .0035 : .00028;
+  L.sky.visible = !rain;                                // overcast: a flat grey sky that matches the haze
+  L.scene.background = rain ? fog.clone() : null;
+  L.rain.material.opacity = .45 - .2 * night;
+  renderer.toneMappingExposure = (rain ? .4 : .28) + .27 * clamp((elev + 4) / 20) + .15 * night;
+  // wet surfaces
+  for (const w of L.wet) { w.m.roughness = rain ? w.wetRough : w.dry; w.m.color.copy(w.col).multiplyScalar(rain ? w.darken : 1); }
+  L.rain.visible = rain;
+  // train lights come on at night and in rain
+  const T = L.train, lit = clamp(night + (rain ? .6 : 0));
+  T.headlight.intensity = 9000 * lit; T.lampMat.emissiveIntensity = .2 + 6 * lit; T.markerMat.emissiveIntensity = .1 + 3 * lit;
+  T.glass.emissiveIntensity = .35 * night;
+  syncConditions();
   clearTimeout(envTimer);
   envTimer = setTimeout(() => {           // image-based light matching the sky
     const sc = new THREE.Scene(); const sk = new Sky(); sk.scale.setScalar(1000); sk.material.uniforms.sunPosition.value.copy(sunV);
     for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG']) sk.material.uniforms[k].value = L.sky.material.uniforms[k].value;
-    sc.add(sk); const old = L.scene.environment; L.scene.environment = pmrem.fromScene(sc).texture; old?.dispose?.();
+    sc.add(sk); const old = L.scene.environment;
+    L.scene.environment = weather === 'rain' ? null : pmrem.fromScene(sc).texture; old?.dispose?.();
   }, 120);
   renderReadout();
 }
+function syncConditions() {
+  const n = isNight(hour);
+  for (const [id, on] of [['#c-day', !n], ['#c-night', n], ['#c-sun', weather === 'sun'], ['#c-rain', weather === 'rain']]) $(id)?.setAttribute('aria-pressed', String(on));
+  const s = $('#hour'); if (s && +s.value !== hour) s.value = hour;
+}
+function setWeather(w) { weather = w; setHour(hour); }
 function level(t) { return t >= LVL[2] ? 3 : t >= LVL[1] ? 2 : t >= LVL[0] ? 1 : 0; }
 const LVLNAME = ['Normal', 'L1 watch', 'L2 restrict', 'L3 severe'];
 const LVLCOL = ['--ok', '--warn', '--hot', '--crit'];
@@ -809,7 +932,7 @@ function renderReadout() {
   const { air, rail } = railAt(hour), lv = level(rail);
   const passing = L.train.running && L.train.x < unitAt.x && L.train.tail > unitAt.x;
   L.readout.style.setProperty('--lvl', css(LVLCOL[lv]));
-  L.readout.innerHTML = `Rail ${rail.toFixed(1)} °C · ${LVLNAME[lv]}<small>Near-rail air ${(air + 4.5 * clamp(railAt(hour).rail - air, 0, 26) / 26).toFixed(1)} °C${passing ? ' · train passing' : ''}</small>`;
+  L.readout.innerHTML = `Rail ${rail.toFixed(1)} °C · ${LVLNAME[lv]}<small>Near-rail air ${(air + 4.5 * clamp(railAt(hour).rail - air, 0, 26) / 26).toFixed(1)} °C${weather === 'rain' ? ' · raining' : ''}${passing ? ' · train passing' : ''}</small>`;
   const box = $('#line-read');
   if (box) {
     box.querySelector('.lvl').textContent = `${rail.toFixed(1)} °C`;
@@ -859,15 +982,22 @@ function renderPanel() {
       <p>The unit sits on the field side of the rail web, mid-crib between concrete sleepers, under the rail-head overhang. It is drawn at true size; use Sensor close-up to find it.</p>
       <div id="line-read"><h3>Simulated reading <span class="when note"></span></h3>
         <div class="row" style="align-items:baseline;gap:12px"><span class="lvl"></span><span class="chip"></span></div>
+        <div class="conds" role="group" aria-label="Conditions">
+          <div class="seg"><button id="c-day">Day</button><button id="c-night">Night</button></div>
+          <div class="seg"><button id="c-sun">Sunshine</button><button id="c-rain">Rain</button></div>
+        </div>
         <label class="note" for="hour">Time of day on the hot design day</label>
-        <input id="hour" type="range" min="5" max="20" step="0.25" value="${hour}">
-        <p class="note">Hot design day from the thermal model (air 25–45 °C, rail up to 69 °C). Alarm levels are the example site values (D-21): L1 ${LVL[0]} °C, L2 ${LVL[1]} °C, L3 ${LVL[2]} °C.</p></div>
+        <input id="hour" type="range" min="0" max="23.75" step="0.25" value="${hour}">
+        <p class="note">Hot design day from the thermal model (air 25–45 °C, rail up to 69 °C). Rain is modelled as cutting the sun's heating to about 15 % and cooling the air by about 6 °C. Alarm levels are the example site values (D-21): L1 ${LVL[0]} °C, L2 ${LVL[1]} °C, L3 ${LVL[2]} °C.</p></div>
       <h3>The line</h3>
       <dl class="kv">${DATA.line.facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
       <p class="note">${esc(DATA.line.note)}</p>
       <h3>Placement rules</h3>
       <dl class="kv"><dt>Side</dt><dd>Field side, below head level</dd><dt>Position</dt><dd>Mid-crib, contact spots wire-brushed</dd><dt>Clearance</dt><dd>≥ 2 m from axle counters, impedance bonds, insulated joints</dd><dt>Electrical</dt><dd>No cable leaves the unit; radio only</dd></dl>`;
     $('#hour').oninput = (e) => setHour(+e.target.value);
+    $('#c-day').onclick = () => setHour(14); $('#c-night').onclick = () => setHour(22);
+    $('#c-sun').onclick = () => setWeather('sun'); $('#c-rain').onclick = () => setWeather('rain');
+    syncConditions();
     renderReadout();
     return;
   }
@@ -960,6 +1090,16 @@ function frame(now) {
         if (T.tail < -800) { T.running = false; T.group.visible = false; T.x = 190; renderTools(); }
         renderReadout();
       }
+      if (L.rain.visible) {                       // fall + wrap, box scaled to the view
+        const pa = L.rain.geometry.attributes.position, arr = pa.array, fall = 22 * dt;
+        for (let i = 0; i < arr.length; i += 6) {
+          arr[i + 1] -= fall; arr[i + 4] -= fall;
+          if (arr[i + 4] < -5) { arr[i + 1] += 30; arr[i + 4] += 30; }
+        }
+        pa.needsUpdate = true;
+        const s = clamp(L.cam.position.distanceTo(L.controls.target) / 12, .05, 3);
+        L.rain.scale.setScalar(s); L.rain.position.copy(L.cam.position).setY(L.cam.position.y - 6 * s);
+      }
       L.ring.scale.setScalar(1 + .25 * Math.sin(now / 420)); L.ring.material.opacity = .55 + .35 * Math.sin(now / 420);
       L.sun.position.copy(L.controls.target).add(L.sky.material.uniforms.sunPosition.value.clone().multiplyScalar(120));
       L.sun.target.position.copy(L.controls.target);
@@ -969,6 +1109,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 setHint();
+window.__rse = { L, U, setHour, setWeather, placeTrain, lineView };
 let start = 'unit';
 try { const s = localStorage.getItem('rse-view'); if (['unit', 'line', 'parts'].includes(s)) start = s; } catch (e) { /* storage unavailable */ }
 if (location.hash === '#line') start = 'line'; if (location.hash === '#parts') start = 'parts';
