@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rail Sensor Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one-screen app. Top bar with tabs; 3-D stage left; spec panel right (bottom sheet on phones).
+   Single deliberate look: Northern Cape dusk. Ballast charcoal ground, sand text, ochre accent, ore-red selection. */
+:root {
+  color-scheme: dark;
+  --ink: #15130f;          /* page ground: ballast charcoal */
+  --stage: #1d1a16;        /* 3-D stage backdrop (unit view) */
+  --panel: #211e19;        /* side panel */
+  --line: #3a352c;         /* hairlines */
+  --sand: #efe4cf;         /* primary text */
+  --dust: #b3a68e;         /* secondary text */
+  --ochre: #e2a04f;        /* accent: Kalahari ochre */
+  --ore: #c4532e;          /* selection / haematite */
+  --ok: #7fb069; --warn: #e8b33f; --hot: #e2763a; --crit: #d8433a;
+  --f-display: "Saira Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--ink); color: var(--sand); font: 15px/1.45 var(--f-body); overflow: hidden; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ochre); outline-offset: 2px; }
+.app { height: 100%; display: grid; grid-template-rows: auto 1fr; padding-top: env(safe-area-inset-top, 0px); }
+
+/* top bar */
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--ink); }
+.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.brand h1 { margin: 0; font: 700 22px/1 var(--f-display); letter-spacing: .02em; text-transform: uppercase; }
+.brand span { font: 400 12px var(--f-mono); color: var(--dust); white-space: nowrap; }
+.tabs { display: flex; gap: 4px; margin-left: auto; }
+.tab { background: none; border: 1px solid transparent; border-radius: 4px; padding: 6px 12px; cursor: pointer; font: 600 15px var(--f-display); letter-spacing: .06em; text-transform: uppercase; color: var(--dust); }
+.tab[aria-selected="true"] { color: var(--ink); background: var(--ochre); }
+.tab:hover:not([aria-selected="true"]) { color: var(--sand); border-color: var(--line); }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg button { background: none; border: 0; padding: 5px 10px; cursor: pointer; font: 600 12px var(--f-mono); color: var(--dust); }
+.seg button[aria-pressed="true"] { background: var(--line); color: var(--sand); }
+
+/* main */
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
+.stage { position: relative; min-height: 0; overflow: hidden; background: var(--stage); }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.labels { position: absolute; inset: 0; pointer-events: none; }
+.hint { position: absolute; left: 16px; top: 14px; max-width: 34ch; padding: 8px 12px; border-left: 2px solid var(--ochre); background: rgba(21,19,15,.72); font-size: 14px; color: var(--sand); pointer-events: none; transition: opacity .4s; }
+@media (max-width: 860px) { .hint.open { display: none; } }
+.hint b { font-family: var(--f-display); letter-spacing: .04em; text-transform: uppercase; color: var(--ochre); }
+.tools { position: absolute; left: 16px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; gap: 6px; }
+.tools button { background: rgba(21,19,15,.82); border: 1px solid var(--line); border-radius: 4px; padding: 7px 12px; cursor: pointer; font: 600 13px var(--f-display); letter-spacing: .06em; text-transform: uppercase; }
+.tools button:hover { border-color: var(--ochre); }
+.tools button[aria-pressed="true"] { border-color: var(--ochre); color: var(--ochre); }
+
+.badge { pointer-events: none; visibility: hidden; cursor: pointer; font: 600 11px/1 var(--f-mono); color: var(--ink); background: var(--sand); border-radius: 10px; padding: 4px 6px; border: 0; transform: translateY(-14px); opacity: 0; transition: opacity .35s, background .2s; white-space: nowrap; }
+.badge.show { opacity: 1; pointer-events: auto; visibility: visible; }
+.badge.sel { background: var(--ore); color: var(--sand); }
+.badge .nm { display: none; font-family: var(--f-body); font-weight: 600; margin-left: 6px; }
+.badge:hover .nm, .badge.sel .nm { display: inline; }
+.readout { pointer-events: none; font: 600 12px/1.3 var(--f-mono); background: rgba(21,19,15,.85); border: 1px solid var(--line); border-left: 3px solid var(--lvl, var(--ok)); padding: 6px 9px; border-radius: 3px; transform: translateY(-34px); white-space: nowrap; }
+.readout small { display: block; font-weight: 400; color: var(--dust); }
+
+/* panel */
+.panel { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 18px 18px calc(24px + env(safe-area-inset-bottom, 0px)); min-width: 0; }
+.panel h2 { margin: 0 0 4px; font: 700 26px/1.05 var(--f-display); text-transform: uppercase; letter-spacing: .02em; text-wrap: balance; }
+.panel h3 { margin: 22px 0 8px; font: 600 13px var(--f-display); letter-spacing: .12em; text-transform: uppercase; color: var(--dust); }
+.eyebrow { font: 600 12px var(--f-mono); color: var(--ochre); letter-spacing: .04em; }
+.panel p { margin: 8px 0; max-width: 60ch; }
+dl.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 10px 0; font-size: 14px; }
+dl.kv dt { color: var(--dust); }
+dl.kv dd { margin: 0; font-family: var(--f-mono); font-size: 13px; font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+.plist { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.plist button { width: 100%; display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: baseline; text-align: left; background: none; border: 0; border-radius: 3px; padding: 5px 6px; cursor: pointer; }
+.plist button:hover { background: var(--line); }
+.plist button.sel { background: var(--ore); }
+.plist .r { font: 600 12px var(--f-mono); color: var(--dust); }
+.plist button.sel .r { color: var(--sand); }
+.plist .g { font-size: 12px; color: var(--dust); }
+.chip { display: inline-block; font: 600 11px var(--f-mono); padding: 2px 7px; border-radius: 10px; border: 1px solid currentColor; }
+.lvl { font: 700 34px/1 var(--f-display); font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--ochre); }
+.row { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn { background: none; border: 1px solid var(--line); border-radius: 4px; padding: 7px 12px; cursor: pointer; font: 600 13px var(--f-display); letter-spacing: .06em; text-transform: uppercase; }
+.btn:hover { border-color: var(--ochre); }
+.btn.primary { background: var(--ochre); color: var(--ink); border-color: var(--ochre); }
+a { color: var(--ochre); }
+.note { font-size: 13px; color: var(--dust); }
+
+/* parts view */
+.sheet { overflow: auto; padding: 22px 16px calc(32px + env(safe-area-inset-bottom, 0px)); }
+.sheet-inner { max-width: 1180px; margin: 0 auto; display: grid; gap: 18px; }
+.totals { display: flex; flex-wrap: wrap; gap: 28px; align-items: end; }
+.totals .t { display: grid; gap: 2px; }
+.totals .t span { font: 600 12px var(--f-mono); color: var(--dust); text-transform: uppercase; letter-spacing: .06em; }
+.totals .t b { font: 700 34px/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; min-width: 980px; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 12px var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--dust); background: var(--panel); position: sticky; top: 0; }
+td.n { font-family: var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+tr.dim td { opacity: .45; }
+.st-verified { color: var(--ok); } .st-from-search-snippet { color: var(--warn); } .st-estimate { color: var(--hot); } .st-not-found { color: var(--crit); }
+
+@media (max-width: 860px) {
+  body { overflow: auto; }
+  .app { height: auto; min-height: 100%; }
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .stage { height: 62vh; min-height: 340px; }
+  .panel { border-left: 0; border-top: 1px solid var(--line); }
+  .tabs { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><h1>Rail Sensor Explorer</h1><span id="ver"></span></div>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab" role="tab" id="tab-unit" aria-selected="true">Exploded unit</button>
+      <button class="tab" role="tab" id="tab-line" aria-selected="false">On the ore line</button>
+      <button class="tab" role="tab" id="tab-parts" aria-selected="false">Parts &amp; sourcing</button>
+    </nav>
+    <div class="seg" role="group" aria-label="Radio version">
+      <button id="sku-lora" aria-pressed="true">LoRa</button><button id="sku-ltem" aria-pressed="false">LTE-M</button>
+    </div>
+  </header>
+
+  <div class="main" id="view-3d">
+    <div class="stage" id="stage">
+      <div class="hint" id="hint"></div>
+      <div class="tools" id="tools"></div>
+    </div>
+    <aside class="panel" id="panel" aria-live="polite"></aside>
+  </div>
+
+  <div class="sheet" id="view-parts" hidden>
+    <div class="sheet-inner" id="parts-inner"></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+
+const DATA = {"meta": {"subtitle": "Tier 1 · desk-only design rev B", "mass": 536}, "unit": {"body": {"L": 114.0, "H": 62.0, "D": 53.0, "wall": 2.5, "cap": 4.0, "lid": 3.0}, "pot": {"d": 32.0, "h": 9.0, "pitch": 35.0}, "parts": [{"id": "body", "name": "Housing body", "shape": "shell", "pos": [0, -2.0, 26.5], "size": [114.0, 58.0, 53.0], "axis": null, "d": null, "length": null, "color": "#7a3b22", "mat": "polymer", "explode": [0, 0, 0], "order": 3, "sku": "both", "inside": false, "group": "Enclosure", "function": "Insulating structure that carries everything and keeps the circuit electrically floating (TN-01/02). Moulded head-stop rib on top, pockets for the Hall sensor and the near-rail air sensor.", "spec": "PA6-GF30, UV-stabilised, rust-brown, 2.5 mm walls", "decision": "D-15, D-30", "source": "housing", "qty": 1}, {"id": "cap", "name": "Top cap", "shape": "box", "pos": [0, 29.0, 26.5], "size": [114.0, 4.0, 53.0], "axis": null, "d": null, "length": null, "color": "#c9ccc8", "mat": "polymer", "explode": [0, 46, 0], "order": 4, "sku": "both", "inside": false, "group": "Enclosure", "function": "Light-grey cap that shades the sensing pot from the sun and carries the antenna away from the rail steel.", "spec": "ASA, light grey (solar absorptance ~0.35)", "decision": "D-12", "source": "housing", "qty": 1}, {"id": "lid", "name": "Battery-bay lid", "shape": "box", "pos": [0, -0.75, 51.5], "size": [109.0, 55.5, 3.0], "axis": null, "d": null, "length": null, "color": "#7a3b22", "mat": "polymer", "explode": [0, 0, 140], "order": 10, "sku": "both", "inside": false, "group": "Enclosure", "function": "Closes the battery bay. Carries the lid magnet for tamper detection and the pressure-equalising vent.", "spec": "PA6-GF30, 3 mm", "decision": "D-19, D-20", "source": "housing", "qty": 1}, {"id": "oring", "name": "Lid gasket", "shape": "frame", "pos": [0, -2.0, 49.4], "size": [104.0, 48.0, 1.6], "axis": null, "d": null, "length": null, "color": "#202224", "mat": "rubber", "explode": [0, 0, 124], "order": 9, "sku": "both", "inside": false, "group": "Enclosure", "function": "Seals the lid for IP67/IP68.", "spec": "EPDM or FKM, 1.6 mm section", "decision": "T1-09", "source": "oring", "qty": 1}, {"id": "screws", "name": "Security screws (×4)", "shape": "screws", "pos": [0, -2.0, 54.0], "size": [100.0, 44.0, 3], "axis": null, "d": null, "length": null, "color": "#b8bcc0", "mat": "metal", "explode": [0, 0, 168], "order": 11, "sku": "both", "inside": false, "group": "Enclosure", "function": "Pin-in Torx screws hold the lid. Opening the lid without a service token locks the unit.", "spec": "A2 stainless, M3, pin-in Torx", "decision": "T1-18", "source": "screws", "qty": 4}, {"id": "vent", "name": "Pressure vent", "shape": "cyl", "pos": [-38, -16, 53.8], "size": null, "axis": "z", "d": 9, "length": 2.4, "color": "#e8e8e2", "mat": "polymer", "explode": [0, 0, 152], "order": 10, "sku": "both", "inside": false, "group": "Enclosure", "function": "ePTFE membrane lets the air volume breathe through daily 30–70 °C cycles without pumping water past the seals.", "spec": "Adhesive ePTFE vent, IP68", "decision": "D-20", "source": "vent", "qty": 1}, {"id": "hook", "name": "Hook slider", "shape": "hook", "pos": [0, -43.5, 5], "size": [30, 25, 10], "axis": null, "d": null, "length": null, "color": "#3b3d40", "mat": "polymer", "explode": [0, -52, 0], "order": 2, "sku": "both", "inside": false, "group": "Mounting", "function": "Rests on the rail foot and, with the head-stop rib, traps the unit vertically. Set in 1 mm detents to the 48/57/60 kg profile mark, locked by a security screw.", "spec": "PA6-GF30, 10 mm root, 6 mm lip lever, 14–50 mm travel", "decision": "D-14, D-15, D-25", "source": "housing", "qty": 1}, {"id": "potA", "name": "Pot magnet A (coated)", "shape": "pot", "pos": [-35.0, 0, 4.5], "size": null, "axis": "z", "d": 32.0, "length": 9.0, "color": "#b8bcc0", "mat": "metal", "explode": [0, 0, -42], "order": 0, "sku": "both", "inside": false, "group": "Rail interface", "function": "Clamps the unit to the web. A 0.1 mm PU friction coat resists sliding along the rail.", "spec": "Ø32 NdFeB SH pot, ~34 kgf rated; 151 N at 0.4 mm on hot rail steel", "decision": "D-14, D-24", "source": "pot", "qty": 1}, {"id": "potC", "name": "Pot magnet C (sensing)", "shape": "pot", "pos": [0, 0, 4.5], "size": null, "axis": "z", "d": 32.0, "length": 9.0, "color": "#b8bcc0", "mat": "metal", "explode": [0, 0, -42], "order": 0, "sku": "both", "inside": false, "group": "Rail interface", "function": "Bare steel face clamps hard onto the rail, so its cup sits at rail temperature. The rail sensor is bonded to its back.", "spec": "Ø32 NdFeB SH pot, bare face", "decision": "D-12", "source": "pot", "qty": 1}, {"id": "potB", "name": "Pot magnet B (coated)", "shape": "pot", "pos": [35.0, 0, 4.5], "size": null, "axis": "z", "d": 32.0, "length": 9.0, "color": "#b8bcc0", "mat": "metal", "explode": [0, 0, -42], "order": 0, "sku": "both", "inside": false, "group": "Rail interface", "function": "Clamps the unit to the web; PU friction coat.", "spec": "Ø32 NdFeB SH pot", "decision": "D-14", "source": "pot", "qty": 1}, {"id": "pad", "name": "Isolation pad", "shape": "box", "pos": [0, 0, 9.25], "size": [5, 5, 0.5], "axis": null, "d": null, "length": null, "color": "#9ec3d6", "mat": "rubber", "explode": [0, 64, -22], "order": 1, "sku": "both", "inside": true, "group": "Rail interface", "function": "Conducts heat from the pot to the sensor while holding off ≥4 kV, so the circuit is never bonded to the rail.", "spec": "Silicone, 0.5 mm, ~3 W/m·K, ≥4 kV", "decision": "T1-14, TN-02", "source": "pad", "qty": 1}, {"id": "tmp1", "name": "Rail sensor (TMP117 #1)", "shape": "box", "pos": [0, 0, 9.95], "size": [3, 3, 0.9], "axis": null, "d": null, "length": null, "color": "#141414", "mat": "chip", "explode": [0, 78, -18], "order": 1, "sku": "both", "inside": true, "group": "Sensing", "function": "Measures the cup temperature (= rail web temperature) to ±0.1–0.2 °C. Firmware adds 150 s lag compensation.", "spec": "TI TMP117, I²C 0x48, on flex", "decision": "D-12, D-13", "source": "tmp117", "qty": 1}, {"id": "guard", "name": "Thermal guard bridge", "shape": "box", "pos": [0, 0, 12], "size": [98.0, 30, 2], "axis": null, "d": null, "length": null, "color": "#5d6166", "mat": "metal", "explode": [0, 42, -16], "order": 1, "sku": "both", "inside": true, "group": "Sensing", "function": "Steel bridge tied to the outer pots so the sensor's surroundings sit at rail temperature; cuts the reading error from ~2 °C to ~0.25 °C.", "spec": "2 mm mild steel, laser cut, ~40 g", "decision": "D-12", "source": "guard", "qty": 1}, {"id": "tmag", "name": "Attachment sensor (TMAG5273)", "shape": "box", "pos": [-53.0, 0, 3.5], "size": [2, 3, 1], "axis": null, "d": null, "length": null, "color": "#141414", "mat": "chip", "explode": [-36, 0, -30], "order": 1, "sku": "both", "inside": true, "group": "Sensing", "function": "3-D Hall sensor 2 mm beside the outer rim of pot A. Detects attachment and removal from the change in the magnet's field vector.", "spec": "TI TMAG5273, I²C; ‖B − B_ref‖ > 10 mT", "decision": "D-18 rev", "source": "tmag5273", "qty": 1}, {"id": "tmp2", "name": "Near-rail air sensor (TMP117 #2)", "shape": "box", "pos": [40, -27.0, 30], "size": [3, 0.9, 3], "axis": null, "d": null, "length": null, "color": "#141414", "mat": "chip", "explode": [0, -44, 0], "order": 2, "sku": "both", "inside": true, "group": "Sensing", "function": "Reads air in a louvred pocket on the lower face. Reported as 'near-rail air', not ambient (it reads 4–8 °C warm in sun).", "spec": "TI TMP117, I²C 0x49", "decision": "T1-02", "source": "tmp117", "qty": 1}, {"id": "louvre", "name": "Air-pocket louvres", "shape": "louvre", "pos": [40, -30.4, 30], "size": [22, 1.2, 16], "axis": null, "d": null, "length": null, "color": "#7a3b22", "mat": "polymer", "explode": [0, -30, 0], "order": 2, "sku": "both", "inside": false, "group": "Sensing", "function": "Shaded slots that let air reach the near-rail air sensor.", "spec": "Moulded in the body", "decision": "T1-02", "source": "housing", "qty": 1}, {"id": "foam", "name": "Foam wall", "shape": "box", "pos": [0, -2.0, 14], "size": [109.0, 53.0, 2], "axis": null, "d": null, "length": null, "color": "#8c8678", "mat": "foam", "explode": [0, 0, 22], "order": 4, "sku": "both", "inside": true, "group": "Enclosure", "function": "Thermal break between the rail-temperature zone (pots, guard) and the battery/electronics bay.", "spec": "Closed-cell PE foam, 2 mm", "decision": "D-12", "source": null, "qty": 1}, {"id": "cradle", "name": "Cell cradle", "shape": "cradle", "pos": [-20, -20.6, 32.2], "size": [64, 6, 34], "axis": null, "d": null, "length": null, "color": "#4a4d50", "mat": "polymer", "explode": [0, -34, 42], "order": 5, "sku": "both", "inside": true, "group": "Power", "function": "Rigid cradle with a thin hard liner. Keeps the cell's first mode at 5.7 kHz, above the rail vibration band; the cell stays replaceable.", "spec": "PA6-GF30 + 0.5 mm Shore-90 PU liner", "decision": "D-27", "source": "housing", "qty": 1}, {"id": "cell", "name": "Li-SOCl₂ D-cell", "shape": "cyl", "pos": [-20, -0.5, 32.2], "size": null, "axis": "x", "d": 34.2, "length": 61.5, "color": "#2e6f9e", "mat": "cell", "explode": [0, 0, 62], "order": 6, "sku": "both", "inside": true, "group": "Power", "function": "Primary 3.6 V cell: ≥7 years on LoRa, 3.3–3.9 years on LTE-M. Wide temperature range, ~1 %/yr self-discharge.", "spec": "3.6 V, ~17–19 Ah bobbin D-cell", "decision": "D-17", "source": "cell", "qty": 1}, {"id": "hlc", "name": "Pulse capacitor (HLC)", "shape": "cyl", "pos": [31, 0, 28], "size": null, "axis": "y", "d": 14.5, "length": 50, "color": "#8a8f3a", "mat": "cell", "explode": [18, 0, 80], "order": 7, "sku": "both", "inside": true, "group": "Power", "function": "Hybrid layer capacitor supplies the radio's current pulses that the bobbin cell cannot.", "spec": "3.6–3.9 V HLC, AA size", "decision": "D-17", "source": "hlc", "qty": 1}, {"id": "pcb", "name": "Baseboard PCB", "shape": "box", "pos": [32, -2, 44.2], "size": [40, 50, 1.6], "axis": null, "d": null, "length": null, "color": "#1f5a3a", "mat": "pcb", "explode": [0, 0, 102], "order": 8, "sku": "both", "inside": true, "group": "Electronics", "function": "Common board for both versions: sensors, log memory, accelerometer, power path. Corner screws plus a centre standoff (first mode 5.0 kHz).", "spec": "4-layer FR-4, 1.6 mm, conformal coated", "decision": "D-26", "source": "pcb", "qty": 1}, {"id": "modL", "name": "LoRa module (RAK3172)", "shape": "box", "pos": [32, 10, 42.3], "size": [15, 15.5, 2.2], "axis": null, "d": null, "length": null, "color": "#30343a", "mat": "metalcan", "explode": [0, 0, 90], "order": 8, "sku": "lora", "inside": true, "group": "Electronics", "function": "STM32WLE5 microcontroller + LoRa radio: runs the firmware and sends EU868 uplinks every 10 min.", "spec": "RAK3172 (STM32WLE5CC)", "decision": "D-01", "source": "rak3172", "qty": 1}, {"id": "modC", "name": "LTE-M module (nRF9151)", "shape": "box", "pos": [32, 10, 42.4], "size": [11, 16, 1.9], "axis": null, "d": null, "length": null, "color": "#30343a", "mat": "metalcan", "explode": [0, 0, 90], "order": 8, "sku": "ltem", "inside": true, "group": "Electronics", "function": "nRF9151 SiP: microcontroller + LTE-M/NB-IoT modem (Release 17 NTN-ready). Batches every 4 h / 1 h / 20 min by rail temperature.", "spec": "Nordic nRF9151", "decision": "D-01, D-11", "source": "nrf9151", "qty": 1}, {"id": "imu", "name": "Accelerometer (LIS2DW12)", "shape": "box", "pos": [22, -12, 43.0], "size": [2, 2, 0.7], "axis": null, "d": null, "length": null, "color": "#141414", "mat": "chip", "explode": [0, 0, 90], "order": 8, "sku": "both", "inside": true, "group": "Electronics", "function": "Wakes the unit on movement or shock (tamper) and checks the unit is upright on the web.", "spec": "ST LIS2DW12, ~1 µA wake-up mode", "decision": "T1-17", "source": "lis2dw12", "qty": 1}, {"id": "flash", "name": "Log memory (8 Mbit NOR)", "shape": "box", "pos": [42, -12, 43.0], "size": [4, 4, 0.6], "axis": null, "d": null, "length": null, "color": "#141414", "mat": "chip", "explode": [0, 0, 90], "order": 8, "sku": "both", "inside": true, "group": "Electronics", "function": "Stores ≥32 days of 10-minute readings plus the A/B persistent-state slots.", "spec": "Macronix MX25R8035F", "decision": "T1-06, D-28", "source": "mx25r", "qty": 1}, {"id": "reed", "name": "Lid reed switch", "shape": "box", "pos": [46, 18, 46.2], "size": [2, 6, 2], "axis": null, "d": null, "length": null, "color": "#cfd6d8", "mat": "glass", "explode": [0, 0, 114], "order": 8, "sku": "both", "inside": true, "group": "Electronics", "function": "Closed by the lid magnet. Lid opened without a service token → unit locks (alarm 0x12).", "spec": "SMD reed switch", "decision": "D-19", "source": "reed", "qty": 1}, {"id": "lidmag", "name": "Lid magnet", "shape": "cyl", "pos": [46, 18, 51.4], "size": null, "axis": "z", "d": 4, "length": 2, "color": "#b8bcc0", "mat": "metal", "explode": [0, 0, 140], "order": 10, "sku": "both", "inside": false, "group": "Electronics", "function": "Holds the reed switch closed while the lid is fitted.", "spec": "Ø4 × 2 mm NdFeB", "decision": "D-19", "source": "lidmag", "qty": 1}, {"id": "antL", "name": "868 MHz antenna", "shape": "box", "pos": [0, 26.4, 30], "size": [42, 0.2, 10], "axis": null, "d": null, "length": null, "color": "#c58b2a", "mat": "flex", "explode": [0, 72, 0], "order": 5, "sku": "lora", "inside": true, "group": "Electronics", "function": "Flexible antenna inside the top cap, as far from the rail steel as the envelope allows.", "spec": "868 MHz FPC antenna", "decision": "D-16", "source": "ant868", "qty": 1}, {"id": "antC", "name": "LTE-M antenna", "shape": "box", "pos": [0, 26.4, 30], "size": [42, 0.2, 10], "axis": null, "d": null, "length": null, "color": "#c58b2a", "mat": "flex", "explode": [0, 72, 0], "order": 5, "sku": "ltem", "inside": true, "group": "Electronics", "function": "Wideband LTE flexible antenna inside the top cap.", "spec": "LTE-M FPC antenna", "decision": "D-01", "source": "antlte", "qty": 1}]}, "rail": {"h": 172.0, "head": 72.0, "foot": 150.0, "web": 16.5}, "site": {"levels": [55, 60, 65]}, "line": {"facts": [["Route", "Sishen (Northern Cape) to Saldanha Bay, 861 km, single track with passing loops"], ["Traffic", "Iron-ore export, 342-wagon trains (375 since 2019)"], ["Axle load", "30 t"], ["Traction", "50 kV AC overhead, Class 15E electric locomotives"], ["Gauge", "1 067 mm (Cape gauge)"]], "note": "Line facts from public sources (Wikipedia, Railway Gazette, BusinessTech). The rail section (60 kg/m class), sleeper spacing, mast spacing and the train's livery are illustrative, not Transnet drawings."}, "sourcing": {"checked": "2026-10-11", "method_note": "Live page fetching was unavailable from this environment (WebFetch DNS failure, curl blocked by egress policy). All prices come from web-search result snippets of the supplier pages (cached, possibly stale) and none were confirmed on a live page, so no entry is 'verified'. Re-check before ordering.", "fx": {"USD_ZAR": 16.66, "source": "News24 markets ticker ~16.66 ZAR/USD, 1 Oct 2026 (search snippet); July 2026 mid-market quotes were 16.4-16.8. Used only for converting non-ZAR prices.", "GBP_ZAR_assumed": 22.3, "GBP_ZAR_note": "Assumed (not sourced), GBP/USD ~1.34 x 16.66; used only for the HLC reference price."}, "vat_note": "SA VAT is 15%. RS Components ZA, Micro Robotics, Communica and Mantech show ex-VAT and inc-VAT prices; this file uses ex-VAT. DigiKey ZA prices are in ZAR ex VAT, and VAT/duties are handled at checkout (handling not checked here). Magnet shops (magnets4u, Magnet Store) and Takealot show VAT-inclusive consumer prices. Converted USD prices exclude import VAT, duty and shipping.", "parts": [{"id": "rak3172", "name": "RAKwireless RAK3172-8-SM-NI (EU868, STM32WLE5)", "qty": 1, "sku": "lora", "supplier": "DigiKey South Africa", "url": "https://www.digikey.co.za/en/products/detail/rakwireless-technology-limited/RAK3172-8-SM-NI/17138049", "unit_price_zar": 166.21, "price_basis": "ex VAT, qty 1 (R144.32 @10, R126.27 @100)", "status": "from-search-snippet", "notes": "Snippet showed 1,318 in stock, 20-week mfr lead time. -SM-I (IPEX) variant also exists.", "alternatives": [{"supplier": "LCSC (ships to SA)", "url": "https://lcsc.com/product-detail/image/RAK3172-8-SM-I_C19723904.html", "unit_price_zar": 130.65, "status": "from-search-snippet; USD 7.842 converted"}]}, {"id": "nrf9151", "name": "Nordic nRF9151-LACA-R7 SiP (LTE-M/NB-IoT/GNSS)", "qty": 1, "sku": "ltem", "supplier": "DigiKey South Africa", "url": "https://www.digikey.co.za/en/product-highlight/n/nordic-semi/nrf9151-sip", "unit_price_zar": 378.23, "price_basis": "ex VAT, qty 1", "status": "from-search-snippet", "notes": "The snippet was cached long ago (marked ~795 days old), so the price may be stale. Bare SiP; no ready-made nRF9151 module with a ZA price was found. NRF9151-DK about R1,676.", "alternatives": [{"supplier": "DigiKey ZA (NRF9151-LACA-R, reel ordering code)", "url": "https://www.digikey.co.za/en/product-highlight/n/nordic-semi/nrf9151-sip", "unit_price_zar": 401.05, "status": "from-search-snippet"}, {"supplier": "Newark (USD)", "url": "https://www.newark.com", "unit_price_zar": 354.36, "status": "from-search-snippet; USD 21.27 converted"}]}, {"id": "tmp117", "name": "TI TMP117AIDRVT (same die as AIDRVR, small reel)", "qty": 2, "sku": "both", "supplier": "RS Components South Africa", "url": "https://za.rs-online.com/web/p/temperature-humidity-sensor-ics/2528571", "unit_price_zar": 114.38, "price_basis": "ex VAT, qty 1 (R131.54 inc VAT; R99.69 @100)", "status": "from-search-snippet", "notes": "The AIDRVR or MAIDRVR codes did not show a ZA price. DigiKey ZA lists TMP117NAIDRVR (a different accuracy grade) at about R57.75.", "alternatives": [{"supplier": "DigiKey ZA (TMP117NAIDRVR)", "url": "https://www.digikey.co.za", "unit_price_zar": 57.75, "status": "from-search-snippet"}, {"supplier": "TME (USD, ships to SA)", "url": "https://www.tme.eu/sa/en/details/tmp117aidrvr/temperature-transducers/texas-instruments/", "unit_price_zar": 114.45, "status": "from-search-snippet; USD 6.87 converted"}, {"supplier": "Micro Robotics (Adafruit TMP117 breakout AF4821, for bench tests)", "url": "https://www.robotics.org.za/AF4821", "unit_price_zar": 212.0, "status": "from-search-snippet"}]}, {"id": "lis2dw12", "name": "ST LIS2DW12TR accelerometer", "qty": 1, "sku": "both", "supplier": "DigiKey South Africa", "url": "https://www.digikey.co.za", "unit_price_zar": 22.16, "price_basis": "ex VAT, qty 1", "status": "from-search-snippet", "notes": "The price came from DigiKey ZA cross-sell listings (R22.16 to R23.32), not from the part's own page.", "alternatives": [{"supplier": "Micro Robotics (DFRobot SEN0409 breakout)", "url": "https://www.robotics.org.za/SEN0409", "unit_price_zar": 76.0, "status": "from-search-snippet"}, {"supplier": "RS ZA (MikroE Accel 10 Click)", "url": "https://za.rs-online.com/web/p/sensor-development-tools/2494046", "unit_price_zar": 200.57, "status": "from-search-snippet"}]}, {"id": "tmag5273", "name": "TI TMAG5273 3-D Hall (A1/A2 QDBVR)", "qty": 1, "sku": "both", "supplier": "DigiKey South Africa", "url": "https://www.digikey.co.za", "unit_price_zar": 8.42, "price_basis": "ex VAT, qty 1, TMAG5273A2QDBVR", "status": "from-search-snippet", "notes": "This price is for the A2 variant (±133 mT range). No ZA price was found for A1 (±40/80 mT); choose the variant to suit the pot-magnet field. TMAG5273C1QDBVR about R17.80.", "alternatives": [{"supplier": "Cytech Systems (A1QDBVR, USD reference)", "url": "https://www.cytechsystems.com.cn/de/product/tmag5273a1qdbvr", "unit_price_zar": 32.39, "status": "from-search-snippet; USD 1.944 converted"}]}, {"id": "mx25r8035f", "name": "Macronix MX25R8035FZUIL0 8 Mbit SPI NOR", "qty": 1, "sku": "both", "supplier": "DigiKey (USD price; the DigiKey ZA storefront should carry it)", "url": "https://azcus.digikey.com/en/products/detail/macronix/MX25R8035FZUIL0/8572963", "unit_price_zar": 9.16, "price_basis": "ex VAT, qty 1; USD 0.55 converted", "status": "estimate", "notes": "No ZAR listing was found. The snippet showed a 32-week lead time.", "alternatives": [{"supplier": "LCSC", "url": "https://www.lcsc.com/product-image/C152596.html", "unit_price_zar": 17.49, "status": "from-search-snippet; USD 1.05 converted"}]}, {"id": "lisocl2_d", "name": "Li-SOCl2 D-cell 3.6 V 19 Ah bobbin (RS PRO ER34615)", "qty": 1, "sku": "both", "supplier": "RS Components South Africa", "url": "https://za.rs-online.com/web/p/d-batteries/1835713", "unit_price_zar": 335.31, "price_basis": "ex VAT, qty 1 (R385.61 inc VAT; R317.12 @50)", "status": "from-search-snippet", "notes": "Rated -55 to +85 °C. Tags or pins are needed for PCB mounting, so check the terminal variant. Ships as dangerous goods (road freight).", "alternatives": [{"supplier": "RS ZA (Tadiran SL-2780/P, 19 Ah)", "url": "https://za.rs-online.com/web/p/d-batteries/1946693", "unit_price_zar": 746.52, "status": "from-search-snippet"}, {"supplier": "RS ZA (Saft LS33600, 17 Ah)", "url": "https://za.rs-online.com/web/p/d-batteries/2019466", "unit_price_zar": 926.94, "status": "from-search-snippet"}, {"supplier": "Mantech (EEMB ER34615 19 Ah)", "url": "https://www.mantech.co.za/ProductInfo.aspx?Item=310M0035", "unit_price_zar": null, "status": "from-search-snippet; price on request"}]}, {"id": "hlc", "name": "Hybrid layer capacitor (Tadiran HLC-1550A)", "qty": 1, "sku": "both", "supplier": "RS Components UK (no SA source found)", "url": "https://uk.rs-online.com/web/p/speciality-size-batteries/0559961", "unit_price_zar": 573.6, "price_basis": "ex VAT, qty 1; GBP 25.72 x assumed 22.3", "status": "estimate", "notes": "No ZA listing was found. The UK listing was out of stock. Tadiran or Jepico mostly sell HLCs only inside approved PulsesPlus packs, so asking for an SL-2780+HLC pack quote may be easier. No price was found for EVE SPC1550.", "alternatives": []}, {"id": "reed_switch", "name": "Reed switch, NO, glass ~20 mm (leaded)", "qty": 1, "sku": "both", "supplier": "Micro Robotics", "url": "https://www.robotics.org.za/index.php?route=product%2Fcategory&path=25_1144", "unit_price_zar": 12.0, "price_basis": "ex VAT, qty 1 (R13.80 inc)", "status": "from-search-snippet", "notes": "A glass reed switch is fragile under rail shock. For the final design, consider an SMD overmoulded part (e.g. Littelfuse/Standex via DigiKey ZA; not priced here) or use the TMAG5273 for lid detection.", "alternatives": [{"supplier": "DIY Electronics (GPS-23)", "url": "https://www.diyelectronics.co.za/store/buttons-switches/4943-gps-23-magnet-reed-switch-normally-open.html", "unit_price_zar": 41.74, "status": "from-search-snippet; R48 inc VAT"}]}, {"id": "lid_magnet", "name": "Lid magnet NdFeB disc 6x2 mm N38", "qty": 1, "sku": "both", "supplier": "Magnet Store (SA)", "url": "https://magnetstore.co.za/products/6x2mm-n38-ni-neodymium-disc", "unit_price_zar": 4.0, "price_basis": "inc VAT, per piece", "status": "from-search-snippet", "notes": "N38 is rated to 80 °C. Use an SH grade if the lid sees rail heat.", "alternatives": [{"supplier": "DIY Electronics (6x2 N38, min 10)", "url": "https://www.diyelectronics.co.za/store/prototyping/5755-neodymium-n38-magnets-disk-6x2mm.html", "unit_price_zar": 9.0, "status": "from-search-snippet; unclear whether per piece or per 10"}]}, {"id": "pot_magnet_32", "name": "NdFeB countersunk pot magnet Ø32 x 8 mm, N35 (price reference)", "qty": 3, "sku": "both", "supplier": "Magnets4U (SA)", "url": "https://shop.magnets4u.co.za/products/counter-sunk-pot-magnets", "unit_price_zar": 50.0, "price_basis": "inc VAT, per piece, SKU POT-A32", "status": "from-search-snippet", "notes": "The snippet was cached about 880 days ago, so the price may have changed. N35 is rated to about 80 °C. No SH or high-temperature 32 mm pot was found in SA, so a custom quote would be needed (e.g. Eclipse via RS, or a Chinese factory).", "alternatives": [{"supplier": "RS ZA (Eclipse E1003/NEO 32x7, 31 kg, 80 °C, sold per pair)", "url": "https://za.rs-online.com/web/p/neodymium-magnets/8735013", "unit_price_zar": 380.71, "status": "from-search-snippet; R761.42 ex VAT per pair"}, {"supplier": "Magnethub (NL32 N35 with carabiner)", "url": "https://magnethub.co.za/collections/neodymium-magnets", "unit_price_zar": 90.0, "status": "from-search-snippet"}, {"supplier": "Supermagnete CSN-32 (EUR 5.77, not converted)", "url": "https://supermagnete.es/eng/pot-magnets-with-countersunk-hole/countersunk-pot-magnet-32mm_CSN-32", "unit_price_zar": null, "status": "from-search-snippet"}]}, {"id": "thermal_pad", "name": "Silicone thermal pad 0.5 mm (RS PRO 6 W/m.K, 150x150 sheet)", "qty": 1, "sku": "both", "supplier": "RS Components South Africa", "url": "https://za.rs-online.com/web/p/thermal-pads/9156058", "unit_price_zar": 513.8, "price_basis": "ex VAT, per 150x150 mm sheet (R590.87 inc)", "status": "from-search-snippet", "notes": "One sheet makes many pieces. No ZA listing at exactly 3 W/m.K was found.", "alternatives": [{"supplier": "RS ZA (RS PRO 0.5 mm 2 W/m.K 300x200)", "url": "https://za.rs-online.com/web/p/thermal-pads/1745691", "unit_price_zar": 229.75, "status": "from-search-snippet"}, {"supplier": "Takealot (generic 0.5 mm 100x100, conductivity unstated)", "url": "https://www.takealot.com/computers/cooling-pads-27177", "unit_price_zar": 173.04, "status": "from-search-snippet; R199 inc VAT"}]}, {"id": "ant_868", "name": "868 MHz flex PCB antenna, U.FL (Yetnorson Y2A240A)", "qty": 1, "sku": "lora", "supplier": "Micro Robotics", "url": "https://www.robotics.org.za/communication-wireless-Industrial/antenna-866mhz", "unit_price_zar": 26.0, "price_basis": "ex VAT, qty 1 (R29.90 inc)", "status": "from-search-snippet", "notes": "", "alternatives": [{"supplier": "RS ZA (RF Solutions ANT-8WPIG-UFL, pigtail whip)", "url": "https://za.rs-online.com/web/p/telemetry-antennas/1251251", "unit_price_zar": 131.18, "status": "from-search-snippet"}]}, {"id": "ant_ltem", "name": "LTE wideband flex antenna (Taoglas FXUB63.01.0150C)", "qty": 1, "sku": "ltem", "supplier": "DigiKey South Africa", "url": "https://www.digikey.co.za", "unit_price_zar": 585.58, "price_basis": "ex VAT, qty 1", "status": "from-search-snippet", "notes": "Premium part. Cheaper LTE FPC antennas (Molex 146185/105263 series) are also stocked by RS ZA and DigiKey ZA but were not priced here.", "alternatives": [{"supplier": "DigiKey ZA (Molex 2133530100, LTE/GPS combo flex, per bag)", "url": "https://www.digikey.co.za/en/product-highlight/m/molex/lte-gps-combo-flexible-antenna", "unit_price_zar": 75.79, "status": "from-search-snippet; band coverage and connector unconfirmed"}]}, {"id": "esim", "name": "MFF2 eSIM / IoT SIM (Vodacom or MTN IoT)", "qty": 1, "sku": "ltem", "supplier": "Vodacom Business / MTN Business IoT (quote only)", "url": "https://www.vodacombusiness.co.za", "unit_price_zar": null, "price_basis": "per month", "status": "not-found", "notes": "Neither operator publishes IoT or MFF2 tariffs online. Resellers sell plastic M2M SIMs: Justworx R395 SIM + 10-100 MB/month plans; Brits Bros R533.50 once-off incl. 30 MB/month for 12 months. Onomondo and Things Mobile offer multi-network MFF2 for SA (USD, usage-based).", "alternatives": [{"supplier": "Brits Bros Parts (M2M roaming SIM, 12 months x 30 MB, plastic SIM)", "url": "https://britsbrosparts.co.za/product/m2m-iot-roaming-data-sim-card-for-gps-trackers-and-alarm-systems/", "unit_price_zar": 533.5, "status": "from-search-snippet; ~R44/month equivalent"}, {"supplier": "Justworx IoT SIM (via Electromann)", "url": "https://take.app/electromann/p/cm9wj28jz0009l104hqnpmmks", "unit_price_zar": 395.0, "status": "from-search-snippet; SIM price, plans extra"}]}, {"id": "vent", "name": "ePTFE pressure-equalising vent (Gore PolyVent Standard PMF100320)", "qty": 1, "sku": "both", "supplier": "RS Components South Africa", "url": "https://za.rs-online.com/web/p/enclosure-accessories/2821505", "unit_price_zar": 131.83, "price_basis": "ex VAT, qty 1 (R151.60 inc)", "status": "from-search-snippet", "notes": "Screw-in type. Check that the thread suits the housing wall. M12x1 PMF100319 is about R142.11.", "alternatives": [{"supplier": "RS ZA (Gore M12x1.5 high airflow PMF100586)", "url": "https://za.rs-online.com/web/p/enclosure-ventilation/2821502", "unit_price_zar": 147.33, "status": "from-search-snippet"}, {"supplier": "DigiKey ZA (Amphenol LTW VENT-PS1NBK-N8001)", "url": "https://www.digikey.co.za/en/products/detail/amphenol-ltw/VENT-PS1NBK-N8001/7898283", "unit_price_zar": null, "status": "from-search-snippet; listed, price not shown"}]}, {"id": "security_screws", "name": "Stainless tamper-proof screws M4 (pin-hex button head, RS PRO)", "qty": 4, "sku": "both", "supplier": "RS Components South Africa", "url": "https://za.rs-online.com/web/p/security-screws/6212669", "unit_price_zar": 5.45, "price_basis": "ex VAT, per screw; sold as bag of 100 (R545.45)", "status": "from-search-snippet", "notes": "This is pin-HEX, not pin-Torx. No M3/M4 stainless pin-Torx with a ZA price was found. A Belmetric pin-Torx button kit exists in M6+ only (about R32/screw). The RS ZA security-screw category lists pin-Torx, but the M3/M4 price was not captured.", "alternatives": [{"supplier": "RS ZA security screws category (pin Torx filter)", "url": "https://za.rs-online.com/web/c/fasteners-fixings/screws-bolts/security-screws/", "unit_price_zar": null, "status": "not-found"}]}, {"id": "oring", "name": "O-ring / lid gasket (silicone)", "qty": 1, "sku": "both", "supplier": "Communica (CMU 200 pc silicone O-ring kit, 15 sizes)", "url": "https://www.communica.co.za/products/cmu-200pc-o-ring-kit-15-sizes", "unit_price_zar": 73.91, "price_basis": "ex VAT, per kit (R85 inc)", "status": "from-search-snippet", "notes": "Good for prototypes. For production, specify the cord section and ID to suit the lid groove.", "alternatives": [{"supplier": "RS ZA (RS PRO silicone O-ring 33x35 mm, bag of 25)", "url": "https://za.rs-online.com/web/p/gaskets-o-rings/2610021", "unit_price_zar": 7.26, "status": "from-search-snippet; R181.44 per bag"}, {"supplier": "RS ZA (5 mm silicone O-ring cord, 5 m)", "url": "https://za.rs-online.com/web/c/bearings-seals/gaskets-seals-packings/seal-o-ring-kits/", "unit_price_zar": 559.56, "status": "from-search-snippet"}]}, {"id": "pcb", "name": "PCB ~50x40 mm, 2- or 4-layer, small batch", "qty": 1, "sku": "both", "supplier": "JLCPCB (ships to SA)", "url": "https://jlcpcb.com/blog/4-free", "unit_price_zar": 6.66, "price_basis": "per board; USD 2 for 5 pcs converted, excl. shipping and import VAT", "status": "estimate", "notes": "The $2/5 pcs offer covers 2-layer up to 100x100 mm and 4-layer up to 50x50 mm (green, 1 oz). Shipping to SA was not found. Forum reports suggest about USD 20-30 by DHL, or a cheaper Global Standard Direct Line option. Import VAT and clearance fees apply.", "alternatives": [{"supplier": "PCBWay (ships to SA)", "url": "https://www.pcbway.com", "unit_price_zar": 6.66, "status": "estimate; same ~USD 2/5 pcs entry pricing reported"}, {"supplier": "ICAPE Trax (Cape Town)", "url": "https://www.dataweek.co.za/20551r", "unit_price_zar": null, "status": "not-found; quote only, 3-day PTH prototypes"}]}, {"id": "housing_sls", "name": "Prototype housing SLS PA12 / PA12-GF (body, cap, lid, hook slider)", "qty": 4, "sku": "both", "supplier": "Protolabs Network (Hubs) South Africa", "url": "https://www.hubs.com/3d-printing/south-africa/", "unit_price_zar": null, "price_basis": "instant quote requires CAD upload", "status": "not-found", "notes": "Hubs SA lists SLS PA12 and PA12-GF. No SA bureau publishes per-cm3 prices; 1159.co.za and Rapid3D offer SLS on quote. As a reference, JLC3DP MJF PA12 is USD 0.275/g (about R4.58/g, Aug 2025), excl. shipping. No GF grade was found at JLC3DP.", "alternatives": [{"supplier": "1159 (SA SLS service)", "url": "https://1159.co.za/pages/sls-3d-printing-services", "unit_price_zar": null, "status": "not-found; quote only"}, {"supplier": "JLC3DP MJF PA12 (per gram, ships to SA)", "url": "https://jlc3dp.com/blog/drastic-material-price-cuts-and-adjusted-post-processing-service-fees", "unit_price_zar": 4.58, "status": "from-search-snippet; per gram, USD 0.275 converted"}]}, {"id": "guard_bridge", "name": "Laser-cut mild steel guard bridge, 2 mm", "qty": 1, "sku": "both", "supplier": "Boland Laser (online instant quote, ships)", "url": "https://bolandlaser.co.za/", "unit_price_zar": null, "price_basis": "quote from DXF", "status": "not-found", "notes": "No published per-part price. Other SA options: Staalbeer, Laser-It, Pharos Steel Works, Lasercore (quote forms).", "alternatives": [{"supplier": "Staalbeer", "url": "https://www.staalbeer.co.za/products/laser-cutting/", "unit_price_zar": null, "status": "not-found"}, {"supplier": "Laser-It", "url": "https://www.laser-it.co.za/", "unit_price_zar": null, "status": "not-found"}]}, {"id": "friction", "name": "High-friction contact surface (anti-slip tape, 50 mm x 5 m)", "qty": 1, "sku": "both", "supplier": "Takealot", "url": "https://www.takealot.com/anti-slip-tape-black/PLID46879637", "unit_price_zar": 156.52, "price_basis": "R180 inc VAT per roll", "status": "from-search-snippet", "notes": "This is grit on a PVC base, not PU. No PU friction coating or PU tape with a ZA price was found.", "alternatives": [{"supplier": "Plasti-Dip rubber spray (bobshop, Autostyle Motorsport)", "url": "https://www.bobshop.co.za/plasti-dip-liquid-rubber-coating-spray-black/p/241778781", "unit_price_zar": 152.17, "status": "from-search-snippet; R175 inc VAT, rubber not PU"}, {"supplier": "Non-Slip.co.za (10 m roll)", "url": "https://www.non-slip.co.za/safety-tape/anti-slip-tape/", "unit_price_zar": 260.87, "status": "from-search-snippet; from R300 inc VAT"}]}, {"id": "conformal", "name": "Conformal coating spray (acrylic, ECS Plastic 70 400 ml)", "qty": 1, "sku": "both", "supplier": "Communica", "url": "https://www.communica.co.za/products/ecs-plastic-70-400ml", "unit_price_zar": 220.0, "price_basis": "ex VAT, per can (R253 inc)", "status": "from-search-snippet", "notes": "", "alternatives": [{"supplier": "Mantech (Kontakt Plastik 70, 200 ml)", "url": "https://www.mantech.co.za/ProductInfo.aspx?Item=90M0039", "unit_price_zar": 197.71, "status": "from-search-snippet"}, {"supplier": "RS ZA (Electrolube acrylic 200 ml)", "url": "https://za.rs-online.com/web/c/facilities-cleaning-maintenance/electronics-cleaners-protective-coatings/conformal-coatings/", "unit_price_zar": 325.68, "status": "from-search-snippet"}]}]}, "sourceMap": {"housing": {"id": "housing_sls", "name": "Prototype housing SLS PA12 / PA12-GF (body, cap, lid, hook slider)", "qty": 4, "sku": "both", "supplier": "Protolabs Network (Hubs) South Africa", "url": "https://www.hubs.com/3d-printing/south-africa/", "unit_price_zar": null, "price_basis": "instant quote requires CAD upload", "status": "not-found", "notes": "Hubs SA lists SLS PA12 and PA12-GF. No SA bureau publishes per-cm3 prices; 1159.co.za and Rapid3D offer SLS on quote. As a reference, JLC3DP MJF PA12 is USD 0.275/g (about R4.58/g, Aug 2025), excl. shipping. No GF grade was found at JLC3DP.", "alternatives": [{"supplier": "1159 (SA SLS service)", "url": "https://1159.co.za/pages/sls-3d-printing-services", "unit_price_zar": null, "status": "not-found; quote only"}, {"supplier": "JLC3DP MJF PA12 (per gram, ships to SA)", "url": "https://jlc3dp.com/blog/drastic-material-price-cuts-and-adjusted-post-processing-service-fees", "unit_price_zar": 4.58, "status": "from-search-snippet; per gram, USD 0.275 converted"}]}, "oring": {"id": "oring", "name": "O-ring / lid gasket (silicone)", "qty": 1, "sku": "both", "supplier": "Communica (CMU 200 pc silicone O-ring kit, 15 sizes)", "url": "https://www.communica.co.za/products/cmu-200pc-o-ring-kit-15-sizes", "unit_price_zar": 73.91, "price_basis": "ex VAT, per kit (R85 inc)", "status": "from-search-snippet", "notes": "Good for prototypes. For production, specify the cord section and ID to suit the lid groove.", "alternatives": [{"supplier": "RS ZA (RS PRO silicone O-ring 33x35 mm, bag of 25)", "url": "https://za.rs-online.com/web/p/gaskets-o-rings/2610021", "unit_price_zar": 7.26, "status": "from-search-snippet; R181.44 per bag"}, {"supplier": "RS ZA (5 mm silicone O-ring cord, 5 m)", "url": "https://za.rs-online.com/web/c/bearings-seals/gaskets-seals-packings/seal-o-ring-kits/", "unit_price_zar": 559.56, "status": "from-search-snippet"}]}, "screws": {"id": "security_screws", "name": "Stainless tamper-proof screws M4 (pin-hex button head, RS PRO)", "qty": 4, "sku": "both", "supplier": "RS Components South Africa", "url": "https://za.rs-online.com/web/p/security-screws/6212669", "unit_price_zar": 5.45, "price_basis": "ex VAT, per screw; sold as bag of 100 (R545.45)", "status": "from-search-snippet", "notes": "This is pin-HEX, not pin-Torx. No M3/M4 stainless pin-Torx with a ZA price was found. A Belmetric pin-Torx button kit exists in M6+ only (about R32/screw). The RS ZA security-screw category lists pin-Torx, but the M3/M4 price was not captured.", "alternatives": [{"supplier": "RS ZA security screws category (pin Torx filter)", "url": "https://za.rs-online.com/web/c/fasteners-fixings/screws-bolts/security-screws/", "unit_price_zar": null, "status": "not-found"}]}, "vent": {"id": "vent", "name": "ePTFE pressure-equalising vent (Gore PolyVent Standard PMF100320)", "qty": 1, "sku": "both", "supplier": "RS Components South Africa", "url": "https://za.rs-online.com/web/p/enclosure-accessories/2821505", "unit_price_zar": 131.83, "price_basis": "ex VAT, qty 1 (R151.60 inc)", "status": "from-search-snippet", "notes": "Screw-in type. Check that the thread suits the housing wall. M12x1 PMF100319 is about R142.11.", "alternatives": [{"supplier": "RS ZA (Gore M12x1.5 high airflow PMF100586)", "url": "https://za.rs-online.com/web/p/enclosure-ventilation/2821502", "unit_price_zar": 147.33, "status": "from-search-snippet"}, {"supplier": "DigiKey ZA (Amphenol LTW VENT-PS1NBK-N8001)", "url": "https://www.digikey.co.za/en/products/detail/amphenol-ltw/VENT-PS1NBK-N8001/7898283", "unit_price_zar": null, "status": "from-search-snippet; listed, price not shown"}]}, "pot": {"id": "pot_magnet_32", "name": "NdFeB countersunk pot magnet Ø32 x 8 mm, N35 (price reference)", "qty": 3, "sku": "both", "supplier": "Magnets4U (SA)", "url": "https://shop.magnets4u.co.za/products/counter-sunk-pot-magnets", "unit_price_zar": 50.0, "price_basis": "inc VAT, per piece, SKU POT-A32", "status": "from-search-snippet", "notes": "The snippet was cached about 880 days ago, so the price may have changed. N35 is rated to about 80 °C. No SH or high-temperature 32 mm pot was found in SA, so a custom quote would be needed (e.g. Eclipse via RS, or a Chinese factory).", "alternatives": [{"supplier": "RS ZA (Eclipse E1003/NEO 32x7, 31 kg, 80 °C, sold per pair)", "url": "https://za.rs-online.com/web/p/neodymium-magnets/8735013", "unit_price_zar": 380.71, "status": "from-search-snippet; R761.42 ex VAT per pair"}, {"supplier": "Magnethub (NL32 N35 with carabiner)", "url": "https://magnethub.co.za/collections/neodymium-magnets", "unit_price_zar": 90.0, "status": "from-search-snippet"}, {"supplier": "Supermagnete CSN-32 (EUR 5.77, not converted)", "url": "https://supermagnete.es/eng/pot-magnets-with-countersunk-hole/countersunk-pot-magnet-32mm_CSN-32", "unit_price_zar": null, "status": "from-search-snippet"}]}, "pad": {"id": "thermal_pad", "name": "Silicone thermal pad 0.5 mm (RS PRO 6 W/m.K, 150x150 sheet)", "qty": 1, "sku": "both", "supplier": "RS Components South Africa", "url": "https://za.rs-online.com/web/p/thermal-pads/9156058", "unit_price_zar": 513.8, "price_basis": "ex VAT, per 150x150 mm sheet (R590.87 inc)", "status": "from-search-snippet", "notes": "One sheet makes many pieces. No ZA listing at exactly 3 W/m.K was found.", "alternatives": [{"supplier": "RS ZA (RS PRO 0.5 mm 2 W/m.K 300x200)", "url": "https://za.rs-online.com/web/p/thermal-pads/1745691", "unit_price_zar": 229.75, "status": "from-search-snippet"}, {"supplier": "Takealot (generic 0.5 mm 100x100, conductivity unstated)", "url": "https://www.takealot.com/computers/cooling-pads-27177", "unit_price_zar": 173.04, "status": "from-search-snippet; R199 inc VAT"}]}, "tmp117": {"id": "tmp117", "name": "TI TMP117AIDRVT (same die as AIDRVR, small reel)", "qty": 2, "sku": "both", "supplier": "RS Components South Africa", "url": "https://za.rs-online.com/web/p/temperature-humidity-sensor-ics/2528571", "unit_price_zar": 114.38, "price_basis": "ex VAT, qty 1 (R131.54 inc VAT; R99.69 @100)", "status": "from-search-snippet", "notes": "The AIDRVR or MAIDRVR codes did not show a ZA price. DigiKey ZA lists TMP117NAIDRVR (a different accuracy grade) at about R57.75.", "alternatives": [{"supplier": "DigiKey ZA (TMP117NAIDRVR)", "url": "https://www.digikey.co.za", "unit_price_zar": 57.75, "status": "from-search-snippet"}, {"supplier": "TME (USD, ships to SA)", "url": "https://www.tme.eu/sa/en/details/tmp117aidrvr/temperature-transducers/texas-instruments/", "unit_price_zar": 114.45, "status": "from-search-snippet; USD 6.87 converted"}, {"supplier": "Micro Robotics (Adafruit TMP117 breakout AF4821, for bench tests)", "url": "https://www.robotics.org.za/AF4821", "unit_price_zar": 212.0, "status": "from-search-snippet"}]}, "guard": {"id": "guard_bridge", "name": "Laser-cut mild steel guard bridge, 2 mm", "qty": 1, "sku": "both", "supplier": "Boland Laser (online instant quote, ships)", "url": "https://bolandlaser.co.za/", "unit_price_zar": null, "price_basis": "quote from DXF", "status": "not-found", "notes": "No published per-part price. Other SA options: Staalbeer, Laser-It, Pharos Steel Works, Lasercore (quote forms).", "alternatives": [{"supplier": "Staalbeer", "url": "https://www.staalbeer.co.za/products/laser-cutting/", "unit_price_zar": null, "status": "not-found"}, {"supplier": "Laser-It", "url": "https://www.laser-it.co.za/", "unit_price_zar": null, "status": "not-found"}]}, "tmag5273": {"id": "tmag5273", "name": "TI TMAG5273 3-D Hall (A1/A2 QDBVR)", "qty": 1, "sku": "both", "supplier": "DigiKey South Africa", "url": "https://www.digikey.co.za", "unit_price_zar": 8.42, "price_basis": "ex VAT, qty 1, TMAG5273A2QDBVR", "status": "from-search-snippet", "notes": "This price is for the A2 variant (±133 mT range). No ZA price was found for A1 (±40/80 mT); choose the variant to suit the pot-magnet field. TMAG5273C1QDBVR about R17.80.", "alternatives": [{"supplier": "Cytech Systems (A1QDBVR, USD reference)", "url": "https://www.cytechsystems.com.cn/de/product/tmag5273a1qdbvr", "unit_price_zar": 32.39, "status": "from-search-snippet; USD 1.944 converted"}]}, "cell": {"id": "lisocl2_d", "name": "Li-SOCl2 D-cell 3.6 V 19 Ah bobbin (RS PRO ER34615)", "qty": 1, "sku": "both", "supplier": "RS Components South Africa", "url": "https://za.rs-online.com/web/p/d-batteries/1835713", "unit_price_zar": 335.31, "price_basis": "ex VAT, qty 1 (R385.61 inc VAT; R317.12 @50)", "status": "from-search-snippet", "notes": "Rated -55 to +85 °C. Tags or pins are needed for PCB mounting, so check the terminal variant. Ships as dangerous goods (road freight).", "alternatives": [{"supplier": "RS ZA (Tadiran SL-2780/P, 19 Ah)", "url": "https://za.rs-online.com/web/p/d-batteries/1946693", "unit_price_zar": 746.52, "status": "from-search-snippet"}, {"supplier": "RS ZA (Saft LS33600, 17 Ah)", "url": "https://za.rs-online.com/web/p/d-batteries/2019466", "unit_price_zar": 926.94, "status": "from-search-snippet"}, {"supplier": "Mantech (EEMB ER34615 19 Ah)", "url": "https://www.mantech.co.za/ProductInfo.aspx?Item=310M0035", "unit_price_zar": null, "status": "from-search-snippet; price on request"}]}, "hlc": {"id": "hlc", "name": "Hybrid layer capacitor (Tadiran HLC-1550A)", "qty": 1, "sku": "both", "supplier": "RS Components UK (no SA source found)", "url": "https://uk.rs-online.com/web/p/speciality-size-batteries/0559961", "unit_price_zar": 573.6, "price_basis": "ex VAT, qty 1; GBP 25.72 x assumed 22.3", "status": "estimate", "notes": "No ZA listing was found. The UK listing was out of stock. Tadiran or Jepico mostly sell HLCs only inside approved PulsesPlus packs, so asking for an SL-2780+HLC pack quote may be easier. No price was found for EVE SPC1550.", "alternatives": []}, "pcb": {"id": "pcb", "name": "PCB ~50x40 mm, 2- or 4-layer, small batch", "qty": 1, "sku": "both", "supplier": "JLCPCB (ships to SA)", "url": "https://jlcpcb.com/blog/4-free", "unit_price_zar": 6.66, "price_basis": "per board; USD 2 for 5 pcs converted, excl. shipping and import VAT", "status": "estimate", "notes": "The $2/5 pcs offer covers 2-layer up to 100x100 mm and 4-layer up to 50x50 mm (green, 1 oz). Shipping to SA was not found. Forum reports suggest about USD 20-30 by DHL, or a cheaper Global Standard Direct Line option. Import VAT and clearance fees apply.", "alternatives": [{"supplier": "PCBWay (ships to SA)", "url": "https://www.pcbway.com", "unit_price_zar": 6.66, "status": "estimate; same ~USD 2/5 pcs entry pricing reported"}, {"supplier": "ICAPE Trax (Cape Town)", "url": "https://www.dataweek.co.za/20551r", "unit_price_zar": null, "status": "not-found; quote only, 3-day PTH prototypes"}]}, "rak3172": {"id": "rak3172", "name": "RAKwireless RAK3172-8-SM-NI (EU868, STM32WLE5)", "qty": 1, "sku": "lora", "supplier": "DigiKey South Africa", "url": "https://www.digikey.co.za/en/products/detail/rakwireless-technology-limited/RAK3172-8-SM-NI/17138049", "unit_price_zar": 166.21, "price_basis": "ex VAT, qty 1 (R144.32 @10, R126.27 @100)", "status": "from-search-snippet", "notes": "Snippet showed 1,318 in stock, 20-week mfr lead time. -SM-I (IPEX) variant also exists.", "alternatives": [{"supplier": "LCSC (ships to SA)", "url": "https://lcsc.com/product-detail/image/RAK3172-8-SM-I_C19723904.html", "unit_price_zar": 130.65, "status": "from-search-snippet; USD 7.842 converted"}]}, "nrf9151": {"id": "nrf9151", "name": "Nordic nRF9151-LACA-R7 SiP (LTE-M/NB-IoT/GNSS)", "qty": 1, "sku": "ltem", "supplier": "DigiKey South Africa", "url": "https://www.digikey.co.za/en/product-highlight/n/nordic-semi/nrf9151-sip", "unit_price_zar": 378.23, "price_basis": "ex VAT, qty 1", "status": "from-search-snippet", "notes": "The snippet was cached long ago (marked ~795 days old), so the price may be stale. Bare SiP; no ready-made nRF9151 module with a ZA price was found. NRF9151-DK about R1,676.", "alternatives": [{"supplier": "DigiKey ZA (NRF9151-LACA-R, reel ordering code)", "url": "https://www.digikey.co.za/en/product-highlight/n/nordic-semi/nrf9151-sip", "unit_price_zar": 401.05, "status": "from-search-snippet"}, {"supplier": "Newark (USD)", "url": "https://www.newark.com", "unit_price_zar": 354.36, "status": "from-search-snippet; USD 21.27 converted"}]}, "lis2dw12": {"id": "lis2dw12", "name": "ST LIS2DW12TR accelerometer", "qty": 1, "sku": "both", "supplier": "DigiKey South Africa", "url": "https://www.digikey.co.za", "unit_price_zar": 22.16, "price_basis": "ex VAT, qty 1", "status": "from-search-snippet", "notes": "The price came from DigiKey ZA cross-sell listings (R22.16 to R23.32), not from the part's own page.", "alternatives": [{"supplier": "Micro Robotics (DFRobot SEN0409 breakout)", "url": "https://www.robotics.org.za/SEN0409", "unit_price_zar": 76.0, "status": "from-search-snippet"}, {"supplier": "RS ZA (MikroE Accel 10 Click)", "url": "https://za.rs-online.com/web/p/sensor-development-tools/2494046", "unit_price_zar": 200.57, "status": "from-search-snippet"}]}, "mx25r": {"id": "mx25r8035f", "name": "Macronix MX25R8035FZUIL0 8 Mbit SPI NOR", "qty": 1, "sku": "both", "supplier": "DigiKey (USD price; the DigiKey ZA storefront should carry it)", "url": "https://azcus.digikey.com/en/products/detail/macronix/MX25R8035FZUIL0/8572963", "unit_price_zar": 9.16, "price_basis": "ex VAT, qty 1; USD 0.55 converted", "status": "estimate", "notes": "No ZAR listing was found. The snippet showed a 32-week lead time.", "alternatives": [{"supplier": "LCSC", "url": "https://www.lcsc.com/product-image/C152596.html", "unit_price_zar": 17.49, "status": "from-search-snippet; USD 1.05 converted"}]}, "reed": {"id": "reed_switch", "name": "Reed switch, NO, glass ~20 mm (leaded)", "qty": 1, "sku": "both", "supplier": "Micro Robotics", "url": "https://www.robotics.org.za/index.php?route=product%2Fcategory&path=25_1144", "unit_price_zar": 12.0, "price_basis": "ex VAT, qty 1 (R13.80 inc)", "status": "from-search-snippet", "notes": "A glass reed switch is fragile under rail shock. For the final design, consider an SMD overmoulded part (e.g. Littelfuse/Standex via DigiKey ZA; not priced here) or use the TMAG5273 for lid detection.", "alternatives": [{"supplier": "DIY Electronics (GPS-23)", "url": "https://www.diyelectronics.co.za/store/buttons-switches/4943-gps-23-magnet-reed-switch-normally-open.html", "unit_price_zar": 41.74, "status": "from-search-snippet; R48 inc VAT"}]}, "lidmag": {"id": "lid_magnet", "name": "Lid magnet NdFeB disc 6x2 mm N38", "qty": 1, "sku": "both", "supplier": "Magnet Store (SA)", "url": "https://magnetstore.co.za/products/6x2mm-n38-ni-neodymium-disc", "unit_price_zar": 4.0, "price_basis": "inc VAT, per piece", "status": "from-search-snippet", "notes": "N38 is rated to 80 °C. Use an SH grade if the lid sees rail heat.", "alternatives": [{"supplier": "DIY Electronics (6x2 N38, min 10)", "url": "https://www.diyelectronics.co.za/store/prototyping/5755-neodymium-n38-magnets-disk-6x2mm.html", "unit_price_zar": 9.0, "status": "from-search-snippet; unclear whether per piece or per 10"}]}, "ant868": {"id": "ant_868", "name": "868 MHz flex PCB antenna, U.FL (Yetnorson Y2A240A)", "qty": 1, "sku": "lora", "supplier": "Micro Robotics", "url": "https://www.robotics.org.za/communication-wireless-Industrial/antenna-866mhz", "unit_price_zar": 26.0, "price_basis": "ex VAT, qty 1 (R29.90 inc)", "status": "from-search-snippet", "notes": "", "alternatives": [{"supplier": "RS ZA (RF Solutions ANT-8WPIG-UFL, pigtail whip)", "url": "https://za.rs-online.com/web/p/telemetry-antennas/1251251", "unit_price_zar": 131.18, "status": "from-search-snippet"}]}, "antlte": {"id": "ant_ltem", "name": "LTE wideband flex antenna (Taoglas FXUB63.01.0150C)", "qty": 1, "sku": "ltem", "supplier": "DigiKey South Africa", "url": "https://www.digikey.co.za", "unit_price_zar": 585.58, "price_basis": "ex VAT, qty 1", "status": "from-search-snippet", "notes": "Premium part. Cheaper LTE FPC antennas (Molex 146185/105263 series) are also stocked by RS ZA and DigiKey ZA but were not priced here.", "alternatives": [{"supplier": "DigiKey ZA (Molex 2133530100, LTE/GPS combo flex, per bag)", "url": "https://www.digikey.co.za/en/product-highlight/m/molex/lte-gps-combo-flexible-antenna", "unit_price_zar": 75.79, "status": "from-search-snippet; band coverage and connector unconfirmed"}]}}};
+const $ = (s) => document.querySelector(s);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const ease = (t) => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const zar = (v) => v == null ? '—' : 'R ' + v.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+$('#ver').textContent = DATA.meta.subtitle;
+
+let sku = 'lora';
+let view = 'unit';
+
+/* ------------------------------------------------------------------ renderer */
+const stage = $('#stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.prepend(renderer.domElement);
+const labelR = new CSS2DRenderer();
+labelR.domElement.className = 'labels';
+stage.append(labelR.domElement);
+const pmrem = new THREE.PMREMGenerator(renderer);
+const roomEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+/* ------------------------------------------------------------------ rail profile */
+function railShape(R, s = 1) {
+  const { h, head, foot, web } = R;
+  const hfE = .07 * h, hfW = .14 * h, hh = .27 * h;
+  const pts = [[-foot / 2, 0], [foot / 2, 0], [foot / 2, hfE], [web / 2, hfW], [web / 2, h - hh],
+    [head / 2, h - hh + .04 * h], [head / 2, h], [-head / 2, h], [-head / 2, h - hh + .04 * h],
+    [-web / 2, h - hh], [-web / 2, hfW], [-foot / 2, hfE]];
+  return new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x * s, y * s)));
+}
+/** Extrude a cross-section (lateral = shape x -> world z, vertical = y) along world x, centred. */
+function alongX(shape, length, opts = {}) {
+  const g = new THREE.ExtrudeGeometry(shape, { depth: length, bevelEnabled: false, ...opts });
+  g.translate(0, 0, -length / 2);
+  g.rotateY(-Math.PI / 2);
+  return g;
+}
+
+/* ------------------------------------------------------------------ unit model (mm) */
+function material(p) {
+  const c = new THREE.Color(p.color);
+  switch (p.mat) {
+    case 'polymer': return new THREE.MeshPhysicalMaterial({ color: c, roughness: .62, clearcoat: .18, clearcoatRoughness: .55 });
+    case 'metal': return new THREE.MeshStandardMaterial({ color: c, metalness: 1, roughness: .26 });
+    case 'rubber': return new THREE.MeshStandardMaterial({ color: c, roughness: .92 });
+    case 'chip': return new THREE.MeshStandardMaterial({ color: c, roughness: .42, metalness: .1 });
+    case 'cell': return new THREE.MeshPhysicalMaterial({ color: c, roughness: .32, clearcoat: .7, clearcoatRoughness: .2 });
+    case 'pcb': return new THREE.MeshPhysicalMaterial({ color: c, roughness: .45, clearcoat: .5 });
+    case 'metalcan': return new THREE.MeshStandardMaterial({ color: '#c8ccd1', metalness: .92, roughness: .32 });
+    case 'glass': return new THREE.MeshPhysicalMaterial({ color: c, roughness: .08, transmission: .6, thickness: 1.5 });
+    case 'flex': return new THREE.MeshStandardMaterial({ color: c, roughness: .38, metalness: .25 });
+    case 'foam': return new THREE.MeshStandardMaterial({ color: c, roughness: 1 });
+    default: return new THREE.MeshStandardMaterial({ color: c });
+  }
+}
+const rbox = (w, h, d, r = .8) => new RoundedBoxGeometry(w, h, d, 3, Math.min(r, Math.min(w, h, d) / 2.2));
+const axisRot = (m, axis) => { if (axis === 'x') m.rotation.z = Math.PI / 2; if (axis === 'z') m.rotation.x = Math.PI / 2; return m; };
+
+function makePart(p, hookLen) {
+  const g = new THREE.Group();
+  const m = material(p);
+  const add = (geo, mat = m) => { const me = new THREE.Mesh(geo, mat); g.add(me); return me; };
+  const B = DATA.unit.body, POT = DATA.unit.pot;
+  switch (p.shape) {
+    case 'shell': {
+      const [L, H, D] = p.size, w = B.wall;
+      const front = new THREE.Shape();
+      front.moveTo(-L / 2, -H / 2); front.lineTo(L / 2, -H / 2); front.lineTo(L / 2, H / 2); front.lineTo(-L / 2, H / 2); front.closePath();
+      for (const x of [-POT.pitch, 0, POT.pitch]) {
+        const hole = new THREE.Path(); hole.absarc(x, -p.pos[1], POT.d / 2 + .3, 0, Math.PI * 2, true); front.holes.push(hole);
+      }
+      const fg = new THREE.ExtrudeGeometry(front, { depth: w, bevelEnabled: true, bevelSize: .5, bevelThickness: .5, bevelSegments: 2, curveSegments: 48 });
+      const fm = add(fg); fm.position.z = -D / 2;
+      add(rbox(L, w, D, .6)).position.set(0, -H / 2 + w / 2, 0);
+      for (const s of [-1, 1]) add(rbox(w, H, D, .6)).position.set(s * (L / 2 - w / 2), 0, 0);
+      // head-stop rib on the web edge of the top, under the cap
+      add(rbox(L - 8, 1.6, 6, .4)).position.set(0, H / 2 + .8, -D / 2 + 3);
+      break;
+    }
+    case 'pot': {
+      const r = p.d / 2, h = p.length;
+      const cup = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 64), m); g.add(cup);
+      const mag = new THREE.Mesh(new THREE.CylinderGeometry(r * .76, r * .76, .5, 64),
+        new THREE.MeshStandardMaterial({ color: '#3a3d42', metalness: .7, roughness: .45 }));
+      mag.position.y = -h / 2 - .05; g.add(mag);
+      if (p.id !== 'potC') {
+        const coat = new THREE.Mesh(new THREE.CylinderGeometry(r, r, .3, 64),
+          new THREE.MeshPhysicalMaterial({ color: '#4b2a1a', roughness: .85, transparent: true, opacity: .85 }));
+        coat.position.y = -h / 2 - .25; g.add(coat);
+      }
+      const chamfer = new THREE.Mesh(new THREE.TorusGeometry(r - .4, .45, 10, 64), m);
+      chamfer.rotation.x = Math.PI / 2; chamfer.position.y = h / 2 - .1; g.add(chamfer);
+      axisRot(g, 'z');
+      break;
+    }
+    case 'cyl': {
+      const r = p.d / 2, L = p.length;
+      if (p.id === 'cell') {
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L - 1.5, 64), m); g.add(body);
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(r + .05, r + .05, L * .32, 64),
+          new THREE.MeshPhysicalMaterial({ color: '#e8e2d2', roughness: .4, clearcoat: .6 }));
+        g.add(band);
+        const nub = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 1.5, 32), new THREE.MeshStandardMaterial({ color: '#d0d3d6', metalness: 1, roughness: .25 }));
+        nub.position.y = L / 2 - .2; g.add(nub);
+      } else {
+        g.add(new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 48), m));
+        if (p.id === 'hlc') {
+          const top = new THREE.Mesh(new THREE.CylinderGeometry(r * .5, r * .5, 1, 24), new THREE.MeshStandardMaterial({ color: '#cfd2d5', metalness: 1, roughness: .3 }));
+          top.position.y = L / 2 + .5; g.add(top);
+        }
+      }
+      axisRot(g, p.axis);
+      break;
+    }
+    case 'frame': {
+      const [W, H, T] = p.size, sec = 3, rr = 5;
+      const rect = (w, h, r) => { const s = new THREE.Shape(); s.moveTo(-w / 2 + r, -h / 2); s.lineTo(w / 2 - r, -h / 2); s.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r); s.lineTo(w / 2, h / 2 - r); s.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2); s.lineTo(-w / 2 + r, h / 2); s.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r); s.lineTo(-w / 2, -h / 2 + r); s.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2); return s; };
+      const o = rect(W, H, rr); o.holes.push(rect(W - 2 * sec, H - 2 * sec, rr - 2));
+      const fgeo = new THREE.ExtrudeGeometry(o, { depth: T, bevelEnabled: true, bevelSize: .4, bevelThickness: .4, bevelSegments: 3 });
+      fgeo.translate(0, 0, -T / 2); add(fgeo);
+      break;
+    }
+    case 'screws': {
+      const [W, H] = p.size;
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+        const head = new THREE.Mesh(new THREE.CylinderGeometry(2.9, 3.1, 1.8, 32), m);
+        head.rotation.x = Math.PI / 2; head.position.set(sx * W / 2, sy * H / 2, 0); g.add(head);
+        const torx = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, .5, 6), new THREE.MeshStandardMaterial({ color: '#202224' }));
+        torx.rotation.x = Math.PI / 2; torx.position.set(sx * W / 2, sy * H / 2, .8); g.add(torx);
+        const shank = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 8, 16), m);
+        shank.rotation.x = Math.PI / 2; shank.position.set(sx * W / 2, sy * H / 2, -4.5); g.add(shank);
+      }
+      break;
+    }
+    case 'louvre': {
+      const [W, , D] = p.size;
+      for (let i = 0; i < 5; i++) {
+        const s = add(rbox(W, .9, 2.4, .3)); s.position.z = -D / 2 + (i + .5) * D / 5; s.rotation.x = .55;
+      }
+      break;
+    }
+    case 'hook': {
+      const [W, , T] = p.size;
+      add(rbox(W, hookLen, T, 1)).position.y = 0;
+      const lip = add(rbox(W + 4, 4, T + 8, 1)); lip.position.set(0, -hookLen / 2 - 1, 3);
+      for (let i = 0; i < 6; i++) add(rbox(W - 6, .8, 1, .2)).position.set(0, hookLen / 2 - 4 - i * 3, T / 2 + .3);
+      const sc = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 1.6, 24), new THREE.MeshStandardMaterial({ color: '#b8bcc0', metalness: 1, roughness: .3 }));
+      sc.rotation.x = Math.PI / 2; sc.position.set(0, hookLen / 2 - 5, T / 2 + 1); g.add(sc);
+      break;
+    }
+    case 'cradle': {
+      const [W, H, D] = p.size;
+      add(rbox(W, 2.5, D, .6)).position.y = -H / 2 + 1.25;
+      for (const s of [-1, 1]) add(rbox(W, H + 8, 2.2, .5)).position.set(0, 4, s * (D / 2 - 1.1));
+      const liner = add(new THREE.BoxGeometry(W - 2, .5, D - 6), new THREE.MeshStandardMaterial({ color: '#c7b78f', roughness: .7 }));
+      liner.position.y = -H / 2 + 2.75;
+      break;
+    }
+    default: {
+      const [W, H, D] = p.size;
+      add(rbox(W, H, D, Math.min(W, H, D) > 3 ? 1 : .2));
+      if (p.id === 'pcb') {           // passives on the inner face
+        let s = 7; const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+        const pm = new THREE.MeshStandardMaterial({ color: '#2b2b2b', roughness: .5 });
+        const cm = new THREE.MeshStandardMaterial({ color: '#b08a5a', roughness: .5 });
+        for (let i = 0; i < 26; i++) {
+          const c = new THREE.Mesh(new THREE.BoxGeometry(1 + rnd() * 1.4, .6 + rnd(), .55), rnd() > .5 ? pm : cm);
+          c.position.set((rnd() - .5) * (W - 6), (rnd() - .5) * (H - 6), -D / 2 - .28);
+          if (Math.abs(c.position.y - 12) < 9 && Math.abs(c.position.x) < 9) continue;
+          g.add(c);
+        }
+        for (const [x, y] of [[-17, -22], [17, -22], [-17, 22], [17, 22], [0, 0]]) {
+          const hole = new THREE.Mesh(new THREE.TorusGeometry(1.4, .35, 8, 24), new THREE.MeshStandardMaterial({ color: '#d4b25c', metalness: 1, roughness: .3 }));
+          hole.position.set(x, y, D / 2 + .05); g.add(hole);
+        }
+      }
+      if (p.mat === 'metalcan') {
+        const dot = new THREE.Mesh(new THREE.CircleGeometry(.9, 16), new THREE.MeshStandardMaterial({ color: '#3c3f44' }));
+        dot.position.set(-W / 2 + 2.2, H / 2 - 2.2, -D / 2 - .01); dot.rotation.y = Math.PI; g.add(dot);
+      }
+    }
+  }
+  return g;
+}
+
+function buildUnit({ hookLen, labels = false } = {}) {
+  const root = new THREE.Group();
+  const lift = new THREE.Group(); root.add(lift);
+  const parts = [];
+  DATA.unit.parts.forEach((p, i) => {
+    const obj = makePart(p, hookLen);
+    obj.position.set(...p.pos);
+    if (p.id === 'hook') obj.position.y = -DATA.unit.body.H / 2 - hookLen / 2;
+    obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.userData.pid = p.id; } });
+    lift.add(obj);
+    const q = { p, obj, base: obj.position.clone(), ex: new THREE.Vector3(...p.explode), ref: i + 1, mats: [] };
+    obj.traverse((o) => { if (o.isMesh) q.mats.push(o.material); });
+    if (labels) {
+      const el = document.createElement('button');
+      el.className = 'badge'; el.type = 'button';
+      el.innerHTML = `${q.ref}<span class="nm">${esc(p.name)}</span>`;
+      el.addEventListener('click', (e) => { e.stopPropagation(); select(p.id); });
+      q.badge = el;
+      const lab = new CSS2DObject(el); obj.add(lab);
+    }
+    parts.push(q);
+  });
+  return { root, lift, parts };
+}
+const visibleFor = (p) => p.sku === 'both' || p.sku === sku;
+
+/* ------------------------------------------------------------------ view 1: exploded unit */
+const R60 = DATA.rail;
+const yFootBottom = DATA.unit.body.H / 2 + 1.5 - (R60.h - .27 * R60.h);     // head underside 1.5 mm above the cap
+const hookLen = (DATA.unit.body.H / 2 + yFootBottom * -1) - DATA.unit.body.H + .14 * R60.h - (DATA.unit.body.H / 2 - DATA.unit.body.H / 2);
+const HOOK = -DATA.unit.body.H / 2 - (yFootBottom + .14 * R60.h);          // gap from body bottom to foot top
+const U = { scene: new THREE.Scene(), cam: new THREE.PerspectiveCamera(32, 1, 1, 20000) };
+U.scene.background = new THREE.Color(css('--stage'));
+U.scene.environment = roomEnv;
+U.unit = buildUnit({ hookLen: -HOOK, labels: true });
+U.scene.add(U.unit.root);
+{
+  const key = new THREE.DirectionalLight('#fff3df', 2.6); key.position.set(260, 420, 360); key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048); Object.assign(key.shadow.camera, { left: -260, right: 260, top: 260, bottom: -260, near: 50, far: 1600 });
+  key.shadow.bias = -.0004; key.shadow.radius = 4; U.scene.add(key);
+  const rim = new THREE.DirectionalLight('#9fb6d8', 1.1); rim.position.set(-300, 150, -260); U.scene.add(rim);
+  U.scene.add(new THREE.HemisphereLight('#f6e7cc', '#2a2118', .45));
+  // rail section
+  const railMat = new THREE.MeshStandardMaterial({ color: '#6d5545', metalness: .55, roughness: .62 });
+  const rail = new THREE.Mesh(alongX(railShape(R60), 460), railMat);
+  U.railMeshes = [rail];
+  rail.position.set(0, yFootBottom, -R60.web / 2); rail.castShadow = rail.receiveShadow = true; U.scene.add(rail);
+  const headStrip = new THREE.Mesh(new THREE.BoxGeometry(460, .8, R60.head * .62), new THREE.MeshStandardMaterial({ color: '#c9ccd0', metalness: 1, roughness: .18 }));
+  headStrip.position.set(0, yFootBottom + R60.h + .2, -R60.web / 2); U.scene.add(headStrip); U.railMeshes.push(headStrip);
+  // contact spots brushed to bare steel (D-24)
+  for (const x of [-DATA.unit.pot.pitch, 0, DATA.unit.pot.pitch]) {
+    const spot = new THREE.Mesh(new THREE.CircleGeometry(19, 48), new THREE.MeshStandardMaterial({ color: '#a7a19a', metalness: .9, roughness: .45 }));
+    spot.position.set(x, 0, .05); U.scene.add(spot); U.railMeshes.push(spot);
+  }
+  // shadow catcher + faint ruler grid
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.ShadowMaterial({ opacity: .35 }));
+  ground.rotation.x = -Math.PI / 2; ground.position.y = yFootBottom - .2; ground.receiveShadow = true; U.scene.add(ground);
+  const grid = new THREE.GridHelper(1200, 60, '#4a4236', '#2c2720'); grid.position.y = yFootBottom - .1; grid.material.transparent = true; grid.material.opacity = .45; U.scene.add(grid);
+}
+U.controls = new OrbitControls(U.cam, renderer.domElement);
+U.controls.enableDamping = true; U.controls.minDistance = 90; U.controls.maxDistance = 1400;
+const U_HOME = { pos: new THREE.Vector3(250, 120, 300), target: new THREE.Vector3(0, -8, 30) };
+const U_EXPL = { pos: new THREE.Vector3(560, 210, 165), target: new THREE.Vector3(0, 4, 150) };
+U.cam.position.copy(U_HOME.pos); U.controls.target.copy(U_HOME.target);
+
+let explodeT = 0, explodeTarget = 0, selected = null, xray = false, showLabels = true, autoSpin = !reduced;
+const hint = $('#hint');
+function setHint() {
+  hint.classList.toggle('open', !!explodeTarget);
+  hint.innerHTML = explodeTarget ? '<b>Exploded</b><br>Click a part or its number for its name and job. Click empty space to clear, or Assemble to close it up.'
+    : '<b>Tier 1 unit on 60 kg/m rail</b><br>Click the unit to open it up. Drag to orbit, scroll to zoom.';
+}
+let explodeFrom = 0, explodeT0 = 0;
+const EXPLODE_MS = 2300;
+function updateExplode(now) {
+  const span = Math.abs(explodeTarget - explodeFrom);
+  const k = reduced || !span ? 1 : clamp((now - explodeT0) / (EXPLODE_MS * span));
+  explodeT = explodeFrom + (explodeTarget - explodeFrom) * k;
+  const u = explodeT;
+  U.unit.lift.position.z = 80 * ease(clamp(u / .32));
+  const fade = 1 - .8 * ease(clamp(u / .4));
+  for (const m of U.railMeshes) { const t = fade < .999; if (m.material.transparent !== t) { m.material.transparent = t; m.material.needsUpdate = true; } m.material.opacity = fade; m.material.depthWrite = !t; }
+  for (const q of U.unit.parts) {
+    const k = ease(clamp((u - .2 - q.p.order * .05) / .45));
+    q.obj.position.copy(q.base).addScaledVector(q.ex, k);
+    if (q.badge) q.badge.classList.toggle('show', showLabels && u > .9 && q.obj.visible);
+  }
+}
+function tweenCam(to, ms = 1100) {
+  const c = U.cam, ctl = U.controls, p0 = c.position.clone(), t0 = ctl.target.clone(), start = performance.now();
+  camTween = (now) => {
+    const k = ease(clamp((now - start) / (reduced ? 1 : ms)));
+    c.position.lerpVectors(p0, to.pos, k); ctl.target.lerpVectors(t0, to.target, k);
+    if (k >= 1) camTween = null;
+  };
+}
+let camTween = null;
+function explode(on) {
+  explodeFrom = explodeT; explodeT0 = performance.now();
+  explodeTarget = on ? 1 : 0;
+  if (!on) select(null);
+  tweenCam(on ? U_EXPL : U_HOME, 1600);
+  autoSpin = false;
+  setHint(); renderTools(); renderPanel();
+}
+function select(id) {
+  selected = id;
+  for (const q of U.unit.parts) {
+    const dim = id && q.p.id !== id;
+    for (const m of q.mats) {
+      m.transparent = dim || (xray && isShell(q.p.id)); m.opacity = dim ? .12 : (xray && isShell(q.p.id) ? .18 : 1);
+      m.depthWrite = !m.transparent; m.needsUpdate = true;
+      if (m.emissive) { m.emissive.set(q.p.id === id ? css('--ore') : '#000'); m.emissiveIntensity = q.p.id === id ? .35 : 0; }
+    }
+    q.badge?.classList.toggle('sel', q.p.id === id);
+  }
+  if (id && explodeTarget) {
+    const q = U.unit.parts.find((x) => x.p.id === id);
+    const wp = new THREE.Vector3(); q.obj.getWorldPosition(wp);
+    const off = U.cam.position.clone().sub(U.controls.target).setLength(clamp(U.cam.position.distanceTo(U.controls.target), 300, 460));
+    tweenCam({ pos: wp.clone().add(off), target: wp }, 800);
+  }
+  renderPanel();
+}
+const isShell = (id) => ['body', 'cap', 'lid', 'louvre'].includes(id);
+function applySku() {
+  for (const q of U.unit.parts) q.obj.visible = visibleFor(q.p);
+  if (L.unit) for (const q of L.unit.parts) q.obj.visible = visibleFor(q.p);
+  if (selected && !visibleFor(U.unit.parts.find((q) => q.p.id === selected).p)) selected = null;
+  select(selected);
+  renderParts();
+}
+
+/* picking */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+let downAt = null, hoverId = null;
+renderer.domElement.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; autoSpin = false; });
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
+  if (view !== 'unit') return;
+  const id = pick(e);
+  if (!explodeTarget) { if (id) explode(true); return; }
+  select(id && id !== selected ? id : null);
+});
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (view !== 'unit') { renderer.domElement.style.cursor = ''; return; }
+  const id = pick(e);
+  renderer.domElement.style.cursor = id ? 'pointer' : 'grab';
+  if (id !== hoverId) {
+    for (const q of U.unit.parts) for (const m of q.mats) if (m.emissive && q.p.id !== selected) { m.emissive.set(q.p.id === id ? css('--ochre') : '#000'); m.emissiveIntensity = q.p.id === id ? .18 : 0; }
+    hoverId = id;
+  }
+});
+function pick(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ptr, U.cam);
+  const hits = ray.intersectObject(U.unit.root, true).filter((h) => h.object.visible && isVisibleChain(h.object) && !(xray && isShell(h.object.userData.pid)) && !(selected && h.object.material.opacity < .5));
+  return hits.length ? hits[0].object.userData.pid : null;
+}
+function isVisibleChain(o) { while (o) { if (!o.visible) return false; o = o.parent; } return true; }
+
+/* ------------------------------------------------------------------ view 2: Sishen–Saldanha line (metres) */
+const L = { scene: new THREE.Scene(), cam: new THREE.PerspectiveCamera(42, 1, .02, 900000) };
+const GAUGE = 1.067, RS = .001;
+const railZ = GAUGE / 2 + R60.head * RS / 2;
+const unitAt = new THREE.Vector3(.3, .012 - yFootBottom * RS, railZ + R60.web * RS / 2);
+
+function canvasTex(size, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  draw(c.getContext('2d'), size);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+function speckle(ctx, n, base, colors, rmin, rmax, r) {
+  ctx.fillStyle = base; ctx.fillRect(0, 0, n, n);
+  for (const [col, count] of colors) {
+    ctx.fillStyle = col;
+    for (let i = 0; i < count; i++) { ctx.globalAlpha = .25 + r() * .6; ctx.beginPath(); ctx.arc(r() * n, r() * n, rmin + r() * (rmax - rmin), 0, 7); ctx.fill(); }
+  }
+  ctx.globalAlpha = 1;
+}
+function buildLine() {
+  const S = L.scene, r = rng(42);
+  // sky + sun
+  L.sky = new Sky(); L.sky.scale.setScalar(450000); S.add(L.sky);
+  const su = L.sky.material.uniforms;
+  su.turbidity.value = 4.5; su.rayleigh.value = 2.2; su.mieCoefficient.value = .004; su.mieDirectionalG.value = .86;
+  L.sun = new THREE.DirectionalLight('#ffe2b8', 3.2); L.sun.castShadow = true;
+  L.sun.shadow.mapSize.set(4096, 4096); Object.assign(L.sun.shadow.camera, { left: -18, right: 18, top: 18, bottom: -18, near: 1, far: 400 });
+  L.sun.shadow.bias = -.00025; L.sun.shadow.normalBias = .02;
+  S.add(L.sun, L.sun.target);
+  L.hemi = new THREE.HemisphereLight('#bcd2ec', '#9a5a32', .55); S.add(L.hemi);
+  S.fog = new THREE.FogExp2('#e9c9a1', .00028);
+
+  // ground: Kalahari sand, gentle swells away from the formation
+  const sand = canvasTex(512, (c, n) => speckle(c, n, '#a8653c', [['#8e4f2c', 2800], ['#c4895a', 2600], ['#6e3a1f', 700], ['#d9b48a', 500]], .6, 2.6, rng(3)), [900, 900]);
+  const gGeo = new THREE.PlaneGeometry(9000, 9000, 220, 220); gGeo.rotateX(-Math.PI / 2);
+  const pos = gGeo.attributes.position, col = new Float32Array(pos.count * 3), cA = new THREE.Color('#8f4a28'), cB = new THREE.Color('#c98a58'), cP = new THREE.Color('#d9c3a0'), tmp = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const n = Math.sin(x * .004) * Math.cos(z * .0053) + .6 * Math.sin(x * .011 + z * .007) + .3 * Math.sin(z * .021 - x * .013);
+    const fade = clamp((Math.abs(z) - 14) / 60);
+    pos.setY(i, -.5 + n * 2.2 * fade + (Math.abs(z) > 2500 ? (Math.abs(z) - 2500) * .006 : 0));
+    const calc = clamp((Math.sin(x * .0021 + 1.3) * Math.sin(z * .0027 - .7) + .5 * Math.sin(x * .009 - z * .006)) - .55) * 1.6;
+    tmp.copy(cA).lerp(cB, clamp(.5 + .45 * n)).lerp(cP, clamp(calc) * .75);
+    if (Math.abs(z - 9) < 2.2) tmp.lerp(cP, .55 * clamp(1 - Math.abs(z - 9) / 2.2 + .3));
+    col.set([tmp.r, tmp.g, tmp.b], i * 3);
+  }
+  gGeo.setAttribute('color', new THREE.BufferAttribute(col, 3)); gGeo.computeVertexNormals();
+  const ground = new THREE.Mesh(gGeo, new THREE.MeshStandardMaterial({ map: sand, vertexColors: true, roughness: .97 }));
+  ground.receiveShadow = true; S.add(ground);
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(1700, 3.6), new THREE.MeshStandardMaterial({
+    map: canvasTex(256, (c, n) => speckle(c, n, '#b59b78', [['#9a7f5d', 1400], ['#d2bc98', 1200], ['#7d6a52', 300]], .5, 1.8, rng(11)), [400, 1]), roughness: 1 }));
+  road.rotation.x = -Math.PI / 2; road.position.set(0, -.47, 9); road.receiveShadow = true; S.add(road);
+
+  // distant flat-topped hills
+  for (let i = 0; i < 16; i++) {
+    const a = r() * Math.PI * 2, d = 2200 + r() * 1900, rad = 140 + r() * 420, h = 35 + r() * 110;
+    const hill = new THREE.Mesh(new THREE.CylinderGeometry(rad * (.55 + r() * .25), rad, h, 10, 1), new THREE.MeshStandardMaterial({ color: '#8a5434', roughness: 1, flatShading: true }));
+    hill.position.set(Math.cos(a) * d, h / 2 - 2, Math.sin(a) * d); hill.rotation.y = r() * 3; S.add(hill);
+  }
+
+  // shrubs (driedoring / Karoo bush), grass tufts, camel-thorn trees
+  const shrubGeo = new THREE.IcosahedronGeometry(1, 1);
+  const shrubs = new THREE.InstancedMesh(shrubGeo, new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), 2600);
+  const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), SC = new THREE.Vector3();
+  const shrubCols = ['#6f7442', '#80814f', '#5d6a3d', '#9a8a54', '#7b6b45'].map((c) => new THREE.Color(c));
+  for (let i = 0; i < shrubs.count; i++) {
+    let x, z; do { x = (r() - .5) * 900; z = (r() - .5) * 900; } while (Math.abs(z) < 7.5 || Math.abs(z - 9) < 3);
+    const s = .25 + r() * .85;
+    M4.compose(V.set(x, -.45 + s * .25, z), Q.setFromAxisAngle(SC.set(0, 1, 0), r() * 6), SC.set(s * (1 + r() * .4), s * (.45 + r() * .3), s * (1 + r() * .4)));
+    shrubs.setMatrixAt(i, M4); shrubs.setColorAt(i, shrubCols[Math.floor(r() * shrubCols.length)]);
+  }
+  shrubs.castShadow = shrubs.receiveShadow = true; S.add(shrubs);
+  const tufts = new THREE.InstancedMesh(new THREE.ConeGeometry(.09, .26, 5), new THREE.MeshStandardMaterial({ color: '#8f7a43', roughness: 1 }), 2400);
+  for (let i = 0; i < tufts.count; i++) {
+    let x, z; do { x = (r() - .5) * 140; z = (r() - .5) * 140; } while (Math.abs(z) < 4.2 || Math.abs(z - 9) < 2.6);
+    const s = .6 + r() * .9; M4.compose(V.set(x, -.42, z), Q.identity(), SC.set(s, s, s)); tufts.setMatrixAt(i, M4);
+  }
+  S.add(tufts);
+  for (const [x, z, s] of [[38, -26, 1.1], [-64, 30, 1.3], [120, 44, 1], [-150, -70, 1.2], [210, -38, .9]]) {
+    const t = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.18, .28, 3.2, 7), new THREE.MeshStandardMaterial({ color: '#4a3526', roughness: 1 }));
+    trunk.position.y = 1.2; t.add(trunk);
+    for (let k = 0; k < 7; k++) {
+      const c = new THREE.Mesh(new THREE.IcosahedronGeometry(1.6, 1), new THREE.MeshStandardMaterial({ color: '#4f5b33', roughness: 1, flatShading: true }));
+      c.scale.set(1.6, .45, 1.6); c.position.set((r() - .5) * 3.6, 3 + r() * .7, (r() - .5) * 3.6); c.castShadow = true; t.add(c);
+    }
+    t.scale.setScalar(s * 1.4); t.position.set(x, -.5, z); t.traverse((o) => { if (o.isMesh) o.castShadow = true; }); S.add(t);
+  }
+
+  // formation + ballast
+  const LEN = 1700;
+  const ballastTex = canvasTex(512, (c, n) => speckle(c, n, '#7b766e', [['#5c5852', 3000], ['#9b958b', 3000], ['#433f3a', 900], ['#b4ada1', 500]], 1, 3.2, rng(9)), [LEN / 2, 3]);
+  const bal = new THREE.Shape([[-3.4, -.55], [3.4, -.55], [1.75, -.03], [-1.75, -.03]].map(([x, y]) => new THREE.Vector2(x, y)));
+  const ballast = new THREE.Mesh(alongX(bal, LEN), new THREE.MeshStandardMaterial({ map: ballastTex, roughness: .95, color: '#9a9184' }));
+  ballast.receiveShadow = true; S.add(ballast);
+  // concrete sleepers every 0.6 m
+  const concrete = canvasTex(256, (c, n) => speckle(c, n, '#b9b4aa', [['#a19c92', 900], ['#cdc8be', 900]], .4, 1.4, rng(5)), [1, 4]);
+  const slGeo = new THREE.BoxGeometry(.25, .2, 2.2); slGeo.translate(0, -.1, 0);
+  const nSl = Math.floor(LEN / .6);
+  const sleepers = new THREE.InstancedMesh(slGeo, new THREE.MeshStandardMaterial({ map: concrete, roughness: .85, color: '#a39e95' }), nSl);
+  const pads = new THREE.InstancedMesh(new THREE.BoxGeometry(.18, .012, .16), new THREE.MeshStandardMaterial({ color: '#141414', roughness: .8 }), nSl * 2);
+  const clipGeo = new THREE.TorusGeometry(.035, .009, 6, 12, Math.PI); clipGeo.rotateY(Math.PI / 2);
+  const clips = new THREE.InstancedMesh(clipGeo, new THREE.MeshStandardMaterial({ color: '#3d3f42', metalness: .6, roughness: .5 }), nSl * 4);
+  let ci = 0;
+  for (let i = 0; i < nSl; i++) {
+    const x = -LEN / 2 + i * .6;
+    M4.makeTranslation(x, 0, 0); sleepers.setMatrixAt(i, M4);
+    for (const [k, s] of [[0, -1], [1, 1]]) {
+      M4.makeTranslation(x, .006, s * railZ); pads.setMatrixAt(i * 2 + k, M4);
+      for (const o of [-1, 1]) { M4.makeTranslation(x, .03, s * railZ + o * (R60.foot * RS / 2 + .02)); clips.setMatrixAt(ci++, M4); }
+    }
+  }
+  for (const m of [sleepers, pads, clips]) { m.castShadow = m.receiveShadow = true; S.add(m); }
+  // rails: 60 kg/m section, Cape gauge 1067 mm
+  const railGeo = alongX(railShape(R60, RS), LEN, { steps: 1, curveSegments: 1 });
+  const railMat = new THREE.MeshStandardMaterial({ color: '#5f4a3d', metalness: .5, roughness: .6 });
+  const headMat = new THREE.MeshStandardMaterial({ color: '#d4d7da', metalness: 1, roughness: .16 });
+  for (const s of [-1, 1]) {
+    const rl = new THREE.Mesh(railGeo, railMat); rl.position.set(0, .012, s * railZ); rl.castShadow = rl.receiveShadow = true; S.add(rl);
+    const hs = new THREE.Mesh(new THREE.BoxGeometry(LEN, .0015, R60.head * RS * .6), headMat); hs.position.set(0, .012 + R60.h * RS + .0004, s * railZ); S.add(hs);
+  }
+
+  // 50 kV AC overhead: masts every 65 m, catenary + contact wire with stagger
+  const steel = new THREE.MeshStandardMaterial({ color: '#8d9296', metalness: .7, roughness: .45 });
+  const insul = new THREE.MeshStandardMaterial({ color: '#5b3424', roughness: .4 });
+  const wireMat = new THREE.MeshStandardMaterial({ color: '#7a4a2a', metalness: .8, roughness: .35 });
+  const CW = 5.6, MW = 7.3, MZ = -3.7, SP = 65;
+  const masts = [];
+  for (let x = -LEN / 2 + 20; x < LEN / 2; x += SP) masts.push(x);
+  const wireGeos = [], dropGeos = [];
+  masts.forEach((x, i) => {
+    const m = new THREE.Group();
+    const col = new THREE.Mesh(new THREE.BoxGeometry(.3, 9.2, .3), steel); col.position.set(0, 4.1, 0); m.add(col);
+    const flange = new THREE.Mesh(new THREE.BoxGeometry(.32, 9.2, .06), steel); flange.position.set(0, 4.1, .15); m.add(flange);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(.9, .4, .9), new THREE.MeshStandardMaterial({ color: '#a39d92', roughness: .9 })); base.position.y = -.35; m.add(base);
+    for (const [y, len] of [[MW, 3.9], [CW + .25, 3.9]]) {
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(.04, .04, len, 10), steel); arm.rotation.x = Math.PI / 2; arm.position.set(0, y, len / 2); m.add(arm);
+      for (let k = 0; k < 6; k++) { const d = new THREE.Mesh(new THREE.CylinderGeometry(.09, .09, .05, 14), insul); d.rotation.x = Math.PI / 2; d.position.set(0, y, .35 + k * .07); m.add(d); }
+    }
+    const stay = new THREE.Mesh(new THREE.CylinderGeometry(.025, .025, 2.0, 8), steel); stay.position.set(0, (MW + CW) / 2 + .1, 3.5); m.add(stay);
+    m.position.set(x, 0, MZ); m.traverse((o) => { if (o.isMesh) o.castShadow = true; }); S.add(m);
+    if (i < masts.length - 1) {
+      const x2 = masts[i + 1], st1 = i % 2 ? .2 : -.2, st2 = -st1;
+      const msg = [], ctw = [];
+      for (let k = 0; k <= 24; k++) {
+        const t = k / 24, xx = x + (x2 - x) * t;
+        msg.push(new THREE.Vector3(xx, MW - 1.1 * 4 * t * (1 - t), MZ + 3.7 + st1 + (st2 - st1) * t));
+        ctw.push(new THREE.Vector3(xx, CW, MZ + 3.7 + st1 + (st2 - st1) * t));
+      }
+      wireGeos.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(msg), 48, .009, 5));
+      wireGeos.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(ctw), 48, .008, 5));
+      for (let k = 1; k < 8; k++) {
+        const t = k / 8, a = msg[Math.round(t * 24)], b = ctw[Math.round(t * 24)];
+        const dg = new THREE.CylinderGeometry(.003, .003, a.y - b.y, 4); dg.translate(a.x, (a.y + b.y) / 2, a.z); dropGeos.push(dg);
+      }
+    }
+  });
+  const wires = new THREE.Mesh(mergeGeometries(wireGeos), wireMat); S.add(wires);
+  S.add(new THREE.Mesh(mergeGeometries(dropGeos), wireMat));
+
+  // the sensor, at real size, field side of the near rail, mid-crib
+  L.unit = buildUnit({ hookLen: -HOOK });
+  L.unit.root.scale.setScalar(RS); L.unit.root.position.copy(unitAt); S.add(L.unit.root);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.09, .1, 64), new THREE.MeshBasicMaterial({ color: css('--ochre'), transparent: true, opacity: .9, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2; ring.position.set(unitAt.x, .015, unitAt.z + .03); S.add(ring); L.ring = ring;
+  const ro = document.createElement('div'); ro.className = 'readout'; L.readout = ro;
+  const roObj = new CSS2DObject(ro); roObj.position.set(unitAt.x, unitAt.y + .09, unitAt.z + .03); S.add(roObj);
+
+  // ore train: 3 electric locos (Co-Co-Co) + 60 loaded ore wagons
+  L.train = buildTrain(); S.add(L.train.group);
+}
+
+function buildTrain() {
+  const group = new THREE.Group();
+  const deck = 1.25;
+  const locoLen = 21.6, locoW = 3.05, locoH = 3.15;
+  const prof = new THREE.Shape([[0, 0], [locoLen, 0], [locoLen, locoH * .55], [locoLen - .9, locoH], [.9, locoH], [0, locoH * .55]].map(([x, y]) => new THREE.Vector2(x, y)));
+  const bodyGeo = new THREE.ExtrudeGeometry(prof, { depth: locoW, bevelEnabled: true, bevelSize: .06, bevelThickness: .06, bevelSegments: 2 });
+  bodyGeo.translate(-locoLen / 2, deck, -locoW / 2);
+  const locoMat = new THREE.MeshPhysicalMaterial({ color: '#8f2a22', roughness: .45, clearcoat: .5 });
+  const stripe = new THREE.MeshStandardMaterial({ color: '#e6b33a', roughness: .5 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: '#1d2a33', roughness: .05, metalness: .3, clearcoat: 1 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#1f1f20', roughness: .7, metalness: .3 });
+  const wheel = new THREE.MeshStandardMaterial({ color: '#3a3836', metalness: .8, roughness: .45 });
+  const locos = [];
+  const bogie = (len, axles) => {
+    const b = new THREE.Group();
+    const fr = new THREE.Mesh(new THREE.BoxGeometry(len, .55, 2.5), dark); fr.position.y = .78; b.add(fr);
+    for (let a = 0; a < axles; a++) for (const s of [-1, 1]) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(.53, .53, .14, 28), wheel); w.rotation.x = Math.PI / 2;
+      w.position.set(-len / 2 + .55 + a * (len - 1.1) / Math.max(1, axles - 1), .53, s * (GAUGE / 2 + .02)); b.add(w);
+    }
+    return b;
+  };
+  for (let i = 0; i < 3; i++) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(bodyGeo, locoMat));
+    for (const s of [-1, 1]) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(locoLen * .98, .22, .02), stripe); st.position.set(0, deck + .45, s * (locoW / 2 + .07)); g.add(st);
+      const win = new THREE.Mesh(new THREE.BoxGeometry(.05, .8, locoW * .78), glass); win.position.set(s * (locoLen / 2 - .52), deck + locoH * .74, 0); win.rotation.z = s * -.5; g.add(win);
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(.04, .5, locoW * .9), stripe); nose.position.set(s * (locoLen / 2 + .07), deck + .35, 0); g.add(nose);
+    }
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(locoLen - 2.6, .25, locoW * .8), new THREE.MeshStandardMaterial({ color: '#6c6f72', roughness: .6, metalness: .4 })); roof.position.y = deck + locoH + .12; g.add(roof);
+    // single-arm pantograph raised to the contact wire
+    const panY = deck + locoH + .25, armLen = 5.6 - panY;
+    const pb = new THREE.Mesh(new THREE.BoxGeometry(1.4, .12, 1.2), dark); pb.position.set(-4, panY + .06, 0); g.add(pb);
+    const lower = new THREE.Mesh(new THREE.CylinderGeometry(.04, .04, armLen * 1.1, 8), dark); lower.position.set(-3.4, panY + armLen * .45, 0); lower.rotation.z = -.62; g.add(lower);
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(.03, .03, armLen * 1.05, 8), dark); upper.position.set(-3.3, panY + armLen * .62, 0); upper.rotation.z = .55; g.add(upper);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(.12, .06, 1.9), new THREE.MeshStandardMaterial({ color: '#a9abad', metalness: .8, roughness: .3 })); head.position.set(-3.9, 5.6 - .03, 0); g.add(head);
+    for (const bx of [-7, 0, 7]) { const bg = bogie(3.6, 2); bg.position.x = bx; g.add(bg); }
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    locos.push(g); group.add(g);
+  }
+  // wagons: one merged geometry with material groups, instanced
+  const wl = 10.2, ww = 2.95, wh = 2.25;
+  const body = new THREE.BoxGeometry(wl, wh, ww); body.translate(0, 1.15 + wh / 2, 0);
+  const ore = new THREE.SphereGeometry(1, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2); ore.scale(wl * .46, .55, ww * .44); ore.translate(0, 1.15 + wh, 0);
+  const parts = [body, ore];
+  for (const bx of [-wl / 2 + 1.6, wl / 2 - 1.6]) {
+    const fr = new THREE.BoxGeometry(2.4, .5, 2.4); fr.translate(bx, .75, 0); parts.push(fr);
+    for (const ax of [-.85, .85]) for (const s of [-1, 1]) { const wg = new THREE.CylinderGeometry(.46, .46, .13, 20); wg.rotateX(Math.PI / 2); wg.translate(bx + ax, .46, s * (GAUGE / 2 + .02)); parts.push(wg); }
+  }
+  const merged = mergeGeometries([body, ore, mergeGeometries(parts.slice(2))], true);
+  const wagons = new THREE.InstancedMesh(merged, [
+    new THREE.MeshStandardMaterial({ color: '#5a4a40', roughness: .8, metalness: .3 }),
+    new THREE.MeshStandardMaterial({ color: '#6b2a1a', roughness: 1 }),
+    dark], 60);
+  wagons.castShadow = wagons.receiveShadow = true; group.add(wagons);
+  group.visible = false;
+  return { group, locos, wagons, locoLen, wl, x: 190, running: false, speed: 17 };
+}
+function placeTrain(T) {            // runs toward -x (loaded, towards Saldanha); T.x is the nose
+  let x = T.x;
+  for (const l of T.locos) { l.position.set(x + T.locoLen / 2, .012, 0); x += T.locoLen + .6; }
+  const M4 = new THREE.Matrix4();
+  for (let i = 0; i < T.wagons.count; i++) { M4.makeTranslation(x + T.wl / 2, .012, 0); T.wagons.setMatrixAt(i, M4); x += T.wl + .6; }
+  T.wagons.instanceMatrix.needsUpdate = true;
+  T.tail = x;
+}
+
+/* sun, sky and the simulated hot design day (thermal-model boundary conditions) */
+const LVL = DATA.site.levels;   // example site levels (D-21)
+function railAt(h) {
+  const air = 35 + 10 * Math.cos(2 * Math.PI * (h - 15) / 24);
+  const hl = h - 1, sl = hl >= 6 && hl <= 18 ? Math.max(0, Math.sin(Math.PI * (hl - 6) / 12)) : 0;
+  return { air, rail: air - 1 + 26 * sl };
+}
+let hour = 14.0, envTimer = null;
+function setHour(h) {
+  hour = h;
+  const elev = Math.max(-4, 62 * Math.sin(Math.PI * (h - 6) / 12));
+  const az = -75 + 150 * clamp((h - 6) / 12);
+  const phi = THREE.MathUtils.degToRad(90 - elev), theta = THREE.MathUtils.degToRad(az + 90);
+  const sunV = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
+  L.sky.material.uniforms.sunPosition.value.copy(sunV);
+  const day = clamp(elev / 18);
+  L.sun.intensity = 5.2 * day; L.sun.color.set('#ffd2a0').lerp(new THREE.Color('#fff4e4'), clamp(elev / 45));
+  L.sun.position.copy(L.controls.target).addScaledVector(sunV, 120); L.sun.target.position.copy(L.controls.target);
+  L.hemi.intensity = .2 + .7 * day;
+  L.scene.fog.color.set('#2a2f3a').lerp(new THREE.Color('#e7c39a'), clamp((elev + 4) / 16)).lerp(new THREE.Color('#d9d4cc'), clamp((elev - 25) / 40) * .5);
+  renderer.toneMappingExposure = .28 + .27 * clamp((elev + 4) / 20);
+  clearTimeout(envTimer);
+  envTimer = setTimeout(() => {           // image-based light matching the sky
+    const sc = new THREE.Scene(); const sk = new Sky(); sk.scale.setScalar(1000); sk.material.uniforms.sunPosition.value.copy(sunV);
+    for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG']) sk.material.uniforms[k].value = L.sky.material.uniforms[k].value;
+    sc.add(sk); const old = L.scene.environment; L.scene.environment = pmrem.fromScene(sc).texture; old?.dispose?.();
+  }, 120);
+  renderReadout();
+}
+function level(t) { return t >= LVL[2] ? 3 : t >= LVL[1] ? 2 : t >= LVL[0] ? 1 : 0; }
+const LVLNAME = ['Normal', 'L1 watch', 'L2 restrict', 'L3 severe'];
+const LVLCOL = ['--ok', '--warn', '--hot', '--crit'];
+function renderReadout() {
+  const { air, rail } = railAt(hour), lv = level(rail);
+  const passing = L.train.running && L.train.x < unitAt.x && L.train.tail > unitAt.x;
+  L.readout.style.setProperty('--lvl', css(LVLCOL[lv]));
+  L.readout.innerHTML = `Rail ${rail.toFixed(1)} °C · ${LVLNAME[lv]}<small>Near-rail air ${(air + 4.5 * clamp(railAt(hour).rail - air, 0, 26) / 26).toFixed(1)} °C${passing ? ' · train passing' : ''}</small>`;
+  const box = $('#line-read');
+  if (box) {
+    box.querySelector('.lvl').textContent = `${rail.toFixed(1)} °C`;
+    box.querySelector('.chip').textContent = LVLNAME[lv];
+    box.querySelector('.chip').style.color = css(LVLCOL[lv]);
+    box.querySelector('.when').textContent = `${String(Math.floor(hour)).padStart(2, '0')}:${String(Math.round((hour % 1) * 60) % 60).padStart(2, '0')}`;
+  }
+}
+L.controls = new OrbitControls(L.cam, renderer.domElement);
+L.controls.enableDamping = true; L.controls.minDistance = .12; L.controls.maxDistance = 2500; L.controls.maxPolarAngle = Math.PI * .495;
+const LV = {
+  close: { pos: unitAt.clone().add(new THREE.Vector3(.42, .22, .5)), target: unitAt.clone().add(new THREE.Vector3(0, -.01, 0)) },
+  side: { pos: new THREE.Vector3(-9, 2.1, 6.5), target: new THREE.Vector3(4, 1.2, 0) },
+  aerial: { pos: new THREE.Vector3(-85, 48, 70), target: new THREE.Vector3(30, 0, 0) },
+};
+let lineBuilt = false, lTween = null;
+function lineView(name) {
+  const to = LV[name], c = L.cam, ctl = L.controls, p0 = c.position.clone(), t0 = ctl.target.clone(), s = performance.now();
+  lTween = (now) => { const k = ease(clamp((now - s) / (reduced ? 1 : 1500))); c.position.lerpVectors(p0, to.pos, k); ctl.target.lerpVectors(t0, to.target, k); if (k >= 1) lTween = null; };
+}
+
+/* ------------------------------------------------------------------ panels */
+const SRC = Object.fromEntries((DATA.sourcing?.parts || []).map((s) => [s.id, s]));
+const srcFor = (p) => p.source ? DATA.sourceMap[p.source] : null;
+function renderTools() {
+  const t = $('#tools');
+  if (view === 'unit') {
+    t.innerHTML = `<button id="b-exp">${explodeTarget ? 'Assemble' : 'Explode'}</button>
+      <button id="b-xr" aria-pressed="${xray}">X-ray housing</button>
+      <button id="b-lb" aria-pressed="${showLabels}">Numbers</button>
+      <button id="b-rs">Reset view</button>`;
+    $('#b-exp').onclick = () => explode(!explodeTarget);
+    $('#b-xr').onclick = () => { xray = !xray; select(selected); renderTools(); };
+    $('#b-lb').onclick = () => { showLabels = !showLabels; renderTools(); };
+    $('#b-rs').onclick = () => tweenCam(explodeTarget ? U_EXPL : U_HOME);
+  } else {
+    t.innerHTML = `<button id="v-close">Sensor close-up</button><button id="v-side">Track side</button><button id="v-aer">Aerial</button>
+      <button id="v-train" aria-pressed="${L.train?.running}">${L.train?.running ? 'Stop train' : 'Run ore train'}</button>`;
+    $('#v-close').onclick = () => lineView('close'); $('#v-side').onclick = () => lineView('side'); $('#v-aer').onclick = () => lineView('aerial');
+    $('#v-train').onclick = () => { const T = L.train; T.running = !T.running; if (T.running && (T.tail ?? Infinity) < -800) T.x = 190; T.group.visible = true; renderTools(); };
+  }
+}
+function renderPanel() {
+  const P = $('#panel');
+  if (view === 'line') {
+    P.innerHTML = `<div class="eyebrow">Northern Cape · Ore Export Line</div><h2>Sishen–Saldanha</h2>
+      <p>The unit sits on the field side of the rail web, mid-crib between concrete sleepers, under the rail-head overhang. It is drawn at true size; use Sensor close-up to find it.</p>
+      <div id="line-read"><h3>Simulated reading <span class="when note"></span></h3>
+        <div class="row" style="align-items:baseline;gap:12px"><span class="lvl"></span><span class="chip"></span></div>
+        <label class="note" for="hour">Time of day on the hot design day</label>
+        <input id="hour" type="range" min="5" max="20" step="0.25" value="${hour}">
+        <p class="note">Hot design day from the thermal model (air 25–45 °C, rail up to 69 °C). Alarm levels are the example site values (D-21): L1 ${LVL[0]} °C, L2 ${LVL[1]} °C, L3 ${LVL[2]} °C.</p></div>
+      <h3>The line</h3>
+      <dl class="kv">${DATA.line.facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+      <p class="note">${esc(DATA.line.note)}</p>
+      <h3>Placement rules</h3>
+      <dl class="kv"><dt>Side</dt><dd>Field side, below head level</dd><dt>Position</dt><dd>Mid-crib, contact spots wire-brushed</dd><dt>Clearance</dt><dd>≥ 2 m from axle counters, impedance bonds, insulated joints</dd><dt>Electrical</dt><dd>No cable leaves the unit; radio only</dd></dl>`;
+    $('#hour').oninput = (e) => setHour(+e.target.value);
+    renderReadout();
+    return;
+  }
+  const visible = U.unit.parts.filter((q) => visibleFor(q.p));
+  if (selected) {
+    const q = U.unit.parts.find((x) => x.p.id === selected), p = q.p, s = srcFor(p);
+    const price = s ? `${zar(s.unit_price_zar)} each · ${esc(s.supplier)}` : (p.source ? 'see Parts & sourcing' : 'cut from sheet stock');
+    P.innerHTML = `<div class="eyebrow">#${q.ref} · ${esc(p.group)}</div><h2>${esc(p.name)}</h2>
+      <p>${esc(p.function)}</p>
+      <dl class="kv"><dt>Spec</dt><dd>${esc(p.spec)}</dd><dt>Qty</dt><dd>${p.qty}</dd><dt>Decision</dt><dd>${esc(p.decision)}</dd>
+      <dt>Source</dt><dd>${s?.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${price}</a>` : price}</dd>
+      ${s ? `<dt>Price status</dt><dd><span class="chip st-${esc(s.status)}">${esc(s.status)}</span></dd>` : ''}</dl>
+      <div class="row"><button class="btn" id="p-clear">All parts</button></div>
+      <h3>Parts</h3>${partList(visible)}`;
+    $('#p-clear').onclick = () => select(null);
+  } else {
+    P.innerHTML = `<div class="eyebrow">${esc(DATA.meta.subtitle)}</div><h2>Inside the rail unit</h2>
+      <p>${explodeTarget ? 'Parts slide out in the order they are assembled. Pick one to see what it does.' : 'Click the unit to open it up. Each part is placed from the same geometry file that the packaging, mass and fit checks use.'}</p>
+      <dl class="kv"><dt>Envelope</dt><dd>${DATA.unit.body.L} × ${DATA.unit.body.H} × ${DATA.unit.body.D} mm</dd>
+      <dt>Mass</dt><dd>${DATA.meta.mass} g (limit 600 g)</dd><dt>Rail error</dt><dd>±0.25 °C mounting + ±0.2 °C sensor</dd>
+      <dt>Battery life</dt><dd>${sku === 'lora' ? '≥ 7 yr (LoRa, 10-min uplinks)' : '3.3–3.9 yr (LTE-M, adaptive batching)'}</dd>
+      <dt>Retention</dt><dd>453 N pull at 0.4 mm on hot rail; hook carries 765 N</dd></dl>
+      <h3>Parts (${visible.length})</h3>${partList(visible)}`;
+  }
+  P.querySelectorAll('[data-pid]').forEach((b) => b.onclick = () => { if (!explodeTarget) explode(true); select(b.dataset.pid); });
+}
+function partList(list) {
+  return `<ul class="plist">${list.map((q) => `<li><button data-pid="${q.p.id}" class="${q.p.id === selected ? 'sel' : ''}"><span class="r">${q.ref}</span><span>${esc(q.p.name)}</span><span class="g">${esc(q.p.group)}</span></button></li>`).join('')}</ul>`;
+}
+function renderParts() {
+  const src = DATA.sourcing, inner = $('#parts-inner');
+  if (!src || !src.parts?.length) { inner.innerHTML = '<h2>Parts &amp; sourcing</h2><p>No sourcing data was bundled.</p>'; return; }
+  const rows = src.parts.map((s) => {
+    const on = s.sku === 'both' || s.sku === sku;
+    const ext = s.unit_price_zar != null ? s.unit_price_zar * s.qty : null;
+    const alts = (s.alternatives || []).map((a) => `${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.supplier)}</a>` : esc(a.supplier)}${a.unit_price_zar != null ? ` ${zar(a.unit_price_zar)}` : ''}`).join('<br>');
+    return { on, ext, html: `<tr class="${on ? '' : 'dim'}"><td>${esc(s.name)}<div class="note">${esc(s.notes || '')}</div></td>
+      <td class="n">${s.qty}</td><td class="n">${zar(s.unit_price_zar)}</td><td class="n">${zar(ext)}</td>
+      <td>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.supplier)}</a>` : esc(s.supplier || '—')}<div class="note">${esc(s.price_basis || '')}</div></td>
+      <td><span class="chip st-${esc(s.status)}">${esc(s.status)}</span></td><td class="note">${alts}</td></tr>` };
+  });
+  const total = rows.filter((r) => r.on && r.ext != null).reduce((a, r) => a + r.ext, 0);
+  const missing = rows.filter((r) => r.on && r.ext == null).length;
+  inner.innerHTML = `<div><div class="eyebrow">Prototype quantity · South African online suppliers · checked ${esc(src.checked)}</div><h2 style="font:700 30px/1.05 var(--f-display);text-transform:uppercase;margin:4px 0 0">Parts &amp; sourcing</h2></div>
+    <div class="totals"><div class="t"><span>${sku === 'lora' ? 'LoRa' : 'LTE-M'} unit, priced items</span><b>${zar(total)}</b></div>
+      <div class="t"><span>Items without a price</span><b>${missing}</b></div>
+      <div class="t"><span>Exchange rate used</span><b>${src.fx?.USD_ZAR ? 'R ' + src.fx.USD_ZAR.toFixed(2) + ' / $' : '—'}</b></div></div>
+    <p class="note">${esc(src.vat_note || '')} Status: <span class="st-verified">verified</span> = price read on the supplier page; <span class="st-from-search-snippet">from-search-snippet</span> = price seen in search results only; <span class="st-estimate">estimate</span> = no SA listing found, estimated; <span class="st-not-found">not-found</span>. Prices are one-off prototype prices, not volume quotes; switch LoRa / LTE-M at the top.</p>
+    <div class="tablewrap"><table><thead><tr><th>Part</th><th>Qty</th><th>Unit</th><th>Line</th><th>Supplier</th><th>Status</th><th>Alternatives</th></tr></thead><tbody>${rows.map((r) => r.html).join('')}</tbody></table></div>`;
+}
+
+/* ------------------------------------------------------------------ tabs, sku, loop */
+function setView(v) {
+  view = v;
+  for (const [id, name] of [['#tab-unit', 'unit'], ['#tab-line', 'line'], ['#tab-parts', 'parts']]) $(id).setAttribute('aria-selected', String(v === name));
+  $('#view-3d').hidden = v === 'parts'; $('#view-parts').hidden = v !== 'parts';
+  if (v === 'line' && !lineBuilt) { buildLine(); lineBuilt = true; applySku(); L.cam.position.copy(LV.side.pos); L.controls.target.copy(LV.side.target); setHour(hour); lineView('close'); }
+  U.controls.enabled = v === 'unit'; L.controls.enabled = v === 'line';
+  U.unit.parts.forEach((q) => q.badge && (q.badge.style.display = v === 'unit' ? '' : 'none'));
+  if (L.readout) L.readout.style.display = v === 'line' ? '' : 'none';
+  hint.hidden = v !== 'unit';
+  renderTools(); renderPanel(); renderParts(); resize();
+  try { localStorage.setItem('rse-view', v); } catch (e) { /* storage unavailable */ }
+}
+$('#tab-unit').onclick = () => setView('unit'); $('#tab-line').onclick = () => setView('line'); $('#tab-parts').onclick = () => setView('parts');
+for (const k of ['lora', 'ltem']) $('#sku-' + k).onclick = () => { sku = k; $('#sku-lora').setAttribute('aria-pressed', String(k === 'lora')); $('#sku-ltem').setAttribute('aria-pressed', String(k === 'ltem')); applySku(); renderPanel(); };
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
+  renderer.setSize(w, h, false); labelR.setSize(w, h);
+  for (const c of [U.cam, L.cam]) { c.aspect = w / h; c.updateProjectionMatrix(); }
+}
+new ResizeObserver(resize).observe(stage);
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (!$('#view-3d').hidden) {
+    if (view === 'unit') {
+      updateExplode(now); camTween?.(now);
+      if (autoSpin) U.unit.root.rotation.y = Math.sin(now / 5200) * .35;
+      else U.unit.root.rotation.y *= .92;
+      for (const q of U.unit.parts) if (q.p.id === selected) for (const m of q.mats) if (m.emissive) m.emissiveIntensity = .25 + .15 * Math.sin(now / 260);
+      U.controls.update(); renderer.render(U.scene, U.cam); labelR.render(U.scene, U.cam);
+    } else if (lineBuilt) {
+      lTween?.(now);
+      const T = L.train;
+      if (T.running) {
+        T.x -= T.speed * dt; placeTrain(T);
+        if (T.tail < -800) { T.running = false; T.group.visible = false; T.x = 190; renderTools(); }
+        renderReadout();
+      }
+      L.ring.scale.setScalar(1 + .25 * Math.sin(now / 420)); L.ring.material.opacity = .55 + .35 * Math.sin(now / 420);
+      L.sun.position.copy(L.controls.target).add(L.sky.material.uniforms.sunPosition.value.clone().multiplyScalar(120));
+      L.sun.target.position.copy(L.controls.target);
+      L.controls.update(); renderer.render(L.scene, L.cam); labelR.render(L.scene, L.cam);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+setHint();
+let start = 'unit';
+try { const s = localStorage.getItem('rse-view'); if (['unit', 'line', 'parts'].includes(s)) start = s; } catch (e) { /* storage unavailable */ }
+if (location.hash === '#line') start = 'line'; if (location.hash === '#parts') start = 'parts';
+setView(start); applySku();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

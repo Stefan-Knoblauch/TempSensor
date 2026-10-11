@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "models"))
 
-import energy, fem_magnet, fem_thermal, fit, lora, mass, modal, retention, thermal  # noqa: E402
+import energy, fem_magnet, fem_thermal, fit, lora, mass, modal, packaging, retention, thermal  # noqa: E402
 from common import checks_table  # noqa: E402
 
 
@@ -30,7 +30,7 @@ def tail(text, n=15):
 def main():
     sections, failures, all_checks = [], [], []
     results = [lora.run(), energy.run(), fem_thermal.run(), thermal.run(), fem_magnet.run(),
-               retention.run(), modal.run(), mass.run(),
+               retention.run(), modal.run(), packaging.run(), mass.run(),
                fit.run(os.path.join(HERE, "fit_profiles.svg"))]
     for res in results:
         sections.append(res["md"])
@@ -45,6 +45,9 @@ def main():
     fw_rc, fw_out = sh(["make", "-s", "test"], os.path.join(ROOT, "firmware"))
     if fw_rc:
         failures.append("firmware tests")
+    vw_rc, vw_out = sh([sys.executable, "build_viewer.py"], os.path.join(ROOT, "viewer"))
+    if vw_rc:
+        failures.append("viewer build: " + vw_out[-200:])
     pf_rc, pf_out = sh([sys.executable, "-m", "unittest", "-v", "test_codec"],
                        os.path.join(ROOT, "platform"))
     if pf_rc:

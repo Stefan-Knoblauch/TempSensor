@@ -17,10 +17,8 @@ PROFILES = {   # name: (height, head, foot, web) mm
 WINDOW_FACTOR = 0.59      # [E] web window / rail height
 WINDOW_TOL = 0.10         # [E] tolerance on the window estimate
 
-# Unit geometry (D-15)  [A]
-BODY_H = 62.0             # body height on the web
-BODY_D = 38.0             # depth from web face
-BODY_L = 110.0            # length along rail
+# Unit geometry (D-15, D-30) from the single geometry source
+from geometry import BODY_H, BODY_D, BODY_L
 STOP_CLEAR = 1.5          # head-stop clearance under head (installed)
 HOOK_MIN, HOOK_MAX = 14.0, 50.0   # hook slider extension range below body
 HOOK_DETENT_STEP = 1.0    # detent pitch; the slider is set to the nearest detent then screwed

@@ -35,3 +35,4 @@ This example runs the methodology in [`docs/design/design-methodology.md`](../..
 | Hall switch behind the pot detects attachment | FEM: behind the pot the change is small; beside the rim \|B\| is non-monotonic with gap | 3-D Hall with vector-distance test (D-18 rev) |
 | Hook, PCB and battery mounts adequate | Modal: all three resonate at 0.9–1.3 kHz, inside the band | Shorter hook lever, PCB centre standoff, rigid cell cradle (D-25 to D-27) |
 | Retrying every tick in an outage is harmless | 10 % outage would cut LTE-M life to 1.4 yr | Back-off and reset persistence (D-28) |
+| 110 × 62 × 38 mm envelope holds everything (mass budget only) | 3-D packaging: the D-cell and pot row do not fit | 114 × 62 × 53 mm, 35 mm pot pitch, one geometry source (D-30) |

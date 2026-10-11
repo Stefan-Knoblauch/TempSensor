@@ -10,6 +10,7 @@ A worked example of the design methodology carried through detailed design for t
 5. [`firmware/README.md`](firmware/README.md): portable firmware core (C99) with simulated-hardware tests.
 6. [`platform/codec.py`](platform/codec.py): platform payload decoder and ingest, tested against firmware vectors.
 7. [`verification/report.md`](verification/report.md): generated verification report.
+8. [`viewer/rail-sensor-3d.html`](viewer/rail-sensor-3d.html): interactive 3-D viewer (exploded unit, the unit on the Sishen–Saldanha line, parts and South African sourcing). Open it in a browser; it loads three.js from a CDN.
 
 ## Re-run everything
 ```
@@ -24,4 +25,5 @@ firmware/      C99 firmware core, HAL abstraction, host tests, test-vector gener
 platform/      Python codec + ingest, unit tests incl. firmware-vector cross-check
 hardware/      hardware design description
 verification/  run_all.py, generated report.md and fit_profiles.svg
+viewer/        build_viewer.py + template.html -> rail-sensor-3d.html; parts_sourcing.json
 ```

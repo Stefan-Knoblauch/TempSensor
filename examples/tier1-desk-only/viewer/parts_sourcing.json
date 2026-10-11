@@ -1,0 +1,281 @@
+{
+  "checked": "2026-10-11",
+  "method_note": "Live page fetching was unavailable from this environment (WebFetch DNS failure, curl blocked by egress policy). All prices come from web-search result snippets of the supplier pages (cached, possibly stale) and none were confirmed on a live page, so no entry is 'verified'. Re-check before ordering.",
+  "fx": {
+    "USD_ZAR": 16.66,
+    "source": "News24 markets ticker ~16.66 ZAR/USD, 1 Oct 2026 (search snippet); July 2026 mid-market quotes were 16.4-16.8. Used only for converting non-ZAR prices.",
+    "GBP_ZAR_assumed": 22.3,
+    "GBP_ZAR_note": "Assumed (not sourced), GBP/USD ~1.34 x 16.66; used only for the HLC reference price."
+  },
+  "vat_note": "SA VAT is 15%. RS Components ZA, Micro Robotics, Communica and Mantech show ex-VAT and inc-VAT prices; this file uses ex-VAT. DigiKey ZA prices are in ZAR ex VAT, and VAT/duties are handled at checkout (handling not checked here). Magnet shops (magnets4u, Magnet Store) and Takealot show VAT-inclusive consumer prices. Converted USD prices exclude import VAT, duty and shipping.",
+  "parts": [
+    {
+      "id": "rak3172", "name": "RAKwireless RAK3172-8-SM-NI (EU868, STM32WLE5)", "qty": 1, "sku": "lora",
+      "supplier": "DigiKey South Africa",
+      "url": "https://www.digikey.co.za/en/products/detail/rakwireless-technology-limited/RAK3172-8-SM-NI/17138049",
+      "unit_price_zar": 166.21, "price_basis": "ex VAT, qty 1 (R144.32 @10, R126.27 @100)",
+      "status": "from-search-snippet",
+      "notes": "Snippet showed 1,318 in stock, 20-week mfr lead time. -SM-I (IPEX) variant also exists.",
+      "alternatives": [
+        {"supplier": "LCSC (ships to SA)", "url": "https://lcsc.com/product-detail/image/RAK3172-8-SM-I_C19723904.html", "unit_price_zar": 130.65, "status": "from-search-snippet; USD 7.842 converted"}
+      ]
+    },
+    {
+      "id": "nrf9151", "name": "Nordic nRF9151-LACA-R7 SiP (LTE-M/NB-IoT/GNSS)", "qty": 1, "sku": "ltem",
+      "supplier": "DigiKey South Africa",
+      "url": "https://www.digikey.co.za/en/product-highlight/n/nordic-semi/nrf9151-sip",
+      "unit_price_zar": 378.23, "price_basis": "ex VAT, qty 1",
+      "status": "from-search-snippet",
+      "notes": "The snippet was cached long ago (marked ~795 days old), so the price may be stale. Bare SiP; no ready-made nRF9151 module with a ZA price was found. NRF9151-DK about R1,676.",
+      "alternatives": [
+        {"supplier": "DigiKey ZA (NRF9151-LACA-R, reel ordering code)", "url": "https://www.digikey.co.za/en/product-highlight/n/nordic-semi/nrf9151-sip", "unit_price_zar": 401.05, "status": "from-search-snippet"},
+        {"supplier": "Newark (USD)", "url": "https://www.newark.com", "unit_price_zar": 354.36, "status": "from-search-snippet; USD 21.27 converted"}
+      ]
+    },
+    {
+      "id": "tmp117", "name": "TI TMP117AIDRVT (same die as AIDRVR, small reel)", "qty": 2, "sku": "both",
+      "supplier": "RS Components South Africa",
+      "url": "https://za.rs-online.com/web/p/temperature-humidity-sensor-ics/2528571",
+      "unit_price_zar": 114.38, "price_basis": "ex VAT, qty 1 (R131.54 inc VAT; R99.69 @100)",
+      "status": "from-search-snippet",
+      "notes": "The AIDRVR or MAIDRVR codes did not show a ZA price. DigiKey ZA lists TMP117NAIDRVR (a different accuracy grade) at about R57.75.",
+      "alternatives": [
+        {"supplier": "DigiKey ZA (TMP117NAIDRVR)", "url": "https://www.digikey.co.za", "unit_price_zar": 57.75, "status": "from-search-snippet"},
+        {"supplier": "TME (USD, ships to SA)", "url": "https://www.tme.eu/sa/en/details/tmp117aidrvr/temperature-transducers/texas-instruments/", "unit_price_zar": 114.45, "status": "from-search-snippet; USD 6.87 converted"},
+        {"supplier": "Micro Robotics (Adafruit TMP117 breakout AF4821, for bench tests)", "url": "https://www.robotics.org.za/AF4821", "unit_price_zar": 212.0, "status": "from-search-snippet"}
+      ]
+    },
+    {
+      "id": "lis2dw12", "name": "ST LIS2DW12TR accelerometer", "qty": 1, "sku": "both",
+      "supplier": "DigiKey South Africa",
+      "url": "https://www.digikey.co.za",
+      "unit_price_zar": 22.16, "price_basis": "ex VAT, qty 1",
+      "status": "from-search-snippet",
+      "notes": "The price came from DigiKey ZA cross-sell listings (R22.16 to R23.32), not from the part's own page.",
+      "alternatives": [
+        {"supplier": "Micro Robotics (DFRobot SEN0409 breakout)", "url": "https://www.robotics.org.za/SEN0409", "unit_price_zar": 76.0, "status": "from-search-snippet"},
+        {"supplier": "RS ZA (MikroE Accel 10 Click)", "url": "https://za.rs-online.com/web/p/sensor-development-tools/2494046", "unit_price_zar": 200.57, "status": "from-search-snippet"}
+      ]
+    },
+    {
+      "id": "tmag5273", "name": "TI TMAG5273 3-D Hall (A1/A2 QDBVR)", "qty": 1, "sku": "both",
+      "supplier": "DigiKey South Africa",
+      "url": "https://www.digikey.co.za",
+      "unit_price_zar": 8.42, "price_basis": "ex VAT, qty 1, TMAG5273A2QDBVR",
+      "status": "from-search-snippet",
+      "notes": "This price is for the A2 variant (±133 mT range). No ZA price was found for A1 (±40/80 mT); choose the variant to suit the pot-magnet field. TMAG5273C1QDBVR about R17.80.",
+      "alternatives": [
+        {"supplier": "Cytech Systems (A1QDBVR, USD reference)", "url": "https://www.cytechsystems.com.cn/de/product/tmag5273a1qdbvr", "unit_price_zar": 32.39, "status": "from-search-snippet; USD 1.944 converted"}
+      ]
+    },
+    {
+      "id": "mx25r8035f", "name": "Macronix MX25R8035FZUIL0 8 Mbit SPI NOR", "qty": 1, "sku": "both",
+      "supplier": "DigiKey (USD price; the DigiKey ZA storefront should carry it)",
+      "url": "https://azcus.digikey.com/en/products/detail/macronix/MX25R8035FZUIL0/8572963",
+      "unit_price_zar": 9.16, "price_basis": "ex VAT, qty 1; USD 0.55 converted",
+      "status": "estimate",
+      "notes": "No ZAR listing was found. The snippet showed a 32-week lead time.",
+      "alternatives": [
+        {"supplier": "LCSC", "url": "https://www.lcsc.com/product-image/C152596.html", "unit_price_zar": 17.49, "status": "from-search-snippet; USD 1.05 converted"}
+      ]
+    },
+    {
+      "id": "lisocl2_d", "name": "Li-SOCl2 D-cell 3.6 V 19 Ah bobbin (RS PRO ER34615)", "qty": 1, "sku": "both",
+      "supplier": "RS Components South Africa",
+      "url": "https://za.rs-online.com/web/p/d-batteries/1835713",
+      "unit_price_zar": 335.31, "price_basis": "ex VAT, qty 1 (R385.61 inc VAT; R317.12 @50)",
+      "status": "from-search-snippet",
+      "notes": "Rated -55 to +85 °C. Tags or pins are needed for PCB mounting, so check the terminal variant. Ships as dangerous goods (road freight).",
+      "alternatives": [
+        {"supplier": "RS ZA (Tadiran SL-2780/P, 19 Ah)", "url": "https://za.rs-online.com/web/p/d-batteries/1946693", "unit_price_zar": 746.52, "status": "from-search-snippet"},
+        {"supplier": "RS ZA (Saft LS33600, 17 Ah)", "url": "https://za.rs-online.com/web/p/d-batteries/2019466", "unit_price_zar": 926.94, "status": "from-search-snippet"},
+        {"supplier": "Mantech (EEMB ER34615 19 Ah)", "url": "https://www.mantech.co.za/ProductInfo.aspx?Item=310M0035", "unit_price_zar": null, "status": "from-search-snippet; price on request"}
+      ]
+    },
+    {
+      "id": "hlc", "name": "Hybrid layer capacitor (Tadiran HLC-1550A)", "qty": 1, "sku": "both",
+      "supplier": "RS Components UK (no SA source found)",
+      "url": "https://uk.rs-online.com/web/p/speciality-size-batteries/0559961",
+      "unit_price_zar": 573.6, "price_basis": "ex VAT, qty 1; GBP 25.72 x assumed 22.3",
+      "status": "estimate",
+      "notes": "No ZA listing was found. The UK listing was out of stock. Tadiran or Jepico mostly sell HLCs only inside approved PulsesPlus packs, so asking for an SL-2780+HLC pack quote may be easier. No price was found for EVE SPC1550.",
+      "alternatives": []
+    },
+    {
+      "id": "reed_switch", "name": "Reed switch, NO, glass ~20 mm (leaded)", "qty": 1, "sku": "both",
+      "supplier": "Micro Robotics",
+      "url": "https://www.robotics.org.za/index.php?route=product%2Fcategory&path=25_1144",
+      "unit_price_zar": 12.0, "price_basis": "ex VAT, qty 1 (R13.80 inc)",
+      "status": "from-search-snippet",
+      "notes": "A glass reed switch is fragile under rail shock. For the final design, consider an SMD overmoulded part (e.g. Littelfuse/Standex via DigiKey ZA; not priced here) or use the TMAG5273 for lid detection.",
+      "alternatives": [
+        {"supplier": "DIY Electronics (GPS-23)", "url": "https://www.diyelectronics.co.za/store/buttons-switches/4943-gps-23-magnet-reed-switch-normally-open.html", "unit_price_zar": 41.74, "status": "from-search-snippet; R48 inc VAT"}
+      ]
+    },
+    {
+      "id": "lid_magnet", "name": "Lid magnet NdFeB disc 6x2 mm N38", "qty": 1, "sku": "both",
+      "supplier": "Magnet Store (SA)",
+      "url": "https://magnetstore.co.za/products/6x2mm-n38-ni-neodymium-disc",
+      "unit_price_zar": 4.0, "price_basis": "inc VAT, per piece",
+      "status": "from-search-snippet",
+      "notes": "N38 is rated to 80 °C. Use an SH grade if the lid sees rail heat.",
+      "alternatives": [
+        {"supplier": "DIY Electronics (6x2 N38, min 10)", "url": "https://www.diyelectronics.co.za/store/prototyping/5755-neodymium-n38-magnets-disk-6x2mm.html", "unit_price_zar": 9.0, "status": "from-search-snippet; unclear whether per piece or per 10"}
+      ]
+    },
+    {
+      "id": "pot_magnet_32", "name": "NdFeB countersunk pot magnet Ø32 x 8 mm, N35 (price reference)", "qty": 3, "sku": "both",
+      "supplier": "Magnets4U (SA)",
+      "url": "https://shop.magnets4u.co.za/products/counter-sunk-pot-magnets",
+      "unit_price_zar": 50.0, "price_basis": "inc VAT, per piece, SKU POT-A32",
+      "status": "from-search-snippet",
+      "notes": "The snippet was cached about 880 days ago, so the price may have changed. N35 is rated to about 80 °C. No SH or high-temperature 32 mm pot was found in SA, so a custom quote would be needed (e.g. Eclipse via RS, or a Chinese factory).",
+      "alternatives": [
+        {"supplier": "RS ZA (Eclipse E1003/NEO 32x7, 31 kg, 80 °C, sold per pair)", "url": "https://za.rs-online.com/web/p/neodymium-magnets/8735013", "unit_price_zar": 380.71, "status": "from-search-snippet; R761.42 ex VAT per pair"},
+        {"supplier": "Magnethub (NL32 N35 with carabiner)", "url": "https://magnethub.co.za/collections/neodymium-magnets", "unit_price_zar": 90.0, "status": "from-search-snippet"},
+        {"supplier": "Supermagnete CSN-32 (EUR 5.77, not converted)", "url": "https://supermagnete.es/eng/pot-magnets-with-countersunk-hole/countersunk-pot-magnet-32mm_CSN-32", "unit_price_zar": null, "status": "from-search-snippet"}
+      ]
+    },
+    {
+      "id": "thermal_pad", "name": "Silicone thermal pad 0.5 mm (RS PRO 6 W/m.K, 150x150 sheet)", "qty": 1, "sku": "both",
+      "supplier": "RS Components South Africa",
+      "url": "https://za.rs-online.com/web/p/thermal-pads/9156058",
+      "unit_price_zar": 513.8, "price_basis": "ex VAT, per 150x150 mm sheet (R590.87 inc)",
+      "status": "from-search-snippet",
+      "notes": "One sheet makes many pieces. No ZA listing at exactly 3 W/m.K was found.",
+      "alternatives": [
+        {"supplier": "RS ZA (RS PRO 0.5 mm 2 W/m.K 300x200)", "url": "https://za.rs-online.com/web/p/thermal-pads/1745691", "unit_price_zar": 229.75, "status": "from-search-snippet"},
+        {"supplier": "Takealot (generic 0.5 mm 100x100, conductivity unstated)", "url": "https://www.takealot.com/computers/cooling-pads-27177", "unit_price_zar": 173.04, "status": "from-search-snippet; R199 inc VAT"}
+      ]
+    },
+    {
+      "id": "ant_868", "name": "868 MHz flex PCB antenna, U.FL (Yetnorson Y2A240A)", "qty": 1, "sku": "lora",
+      "supplier": "Micro Robotics",
+      "url": "https://www.robotics.org.za/communication-wireless-Industrial/antenna-866mhz",
+      "unit_price_zar": 26.0, "price_basis": "ex VAT, qty 1 (R29.90 inc)",
+      "status": "from-search-snippet",
+      "notes": "",
+      "alternatives": [
+        {"supplier": "RS ZA (RF Solutions ANT-8WPIG-UFL, pigtail whip)", "url": "https://za.rs-online.com/web/p/telemetry-antennas/1251251", "unit_price_zar": 131.18, "status": "from-search-snippet"}
+      ]
+    },
+    {
+      "id": "ant_ltem", "name": "LTE wideband flex antenna (Taoglas FXUB63.01.0150C)", "qty": 1, "sku": "ltem",
+      "supplier": "DigiKey South Africa",
+      "url": "https://www.digikey.co.za",
+      "unit_price_zar": 585.58, "price_basis": "ex VAT, qty 1",
+      "status": "from-search-snippet",
+      "notes": "Premium part. Cheaper LTE FPC antennas (Molex 146185/105263 series) are also stocked by RS ZA and DigiKey ZA but were not priced here.",
+      "alternatives": [
+        {"supplier": "DigiKey ZA (Molex 2133530100, LTE/GPS combo flex, per bag)", "url": "https://www.digikey.co.za/en/product-highlight/m/molex/lte-gps-combo-flexible-antenna", "unit_price_zar": 75.79, "status": "from-search-snippet; band coverage and connector unconfirmed"}
+      ]
+    },
+    {
+      "id": "esim", "name": "MFF2 eSIM / IoT SIM (Vodacom or MTN IoT)", "qty": 1, "sku": "ltem",
+      "supplier": "Vodacom Business / MTN Business IoT (quote only)",
+      "url": "https://www.vodacombusiness.co.za",
+      "unit_price_zar": null, "price_basis": "per month",
+      "status": "not-found",
+      "notes": "Neither operator publishes IoT or MFF2 tariffs online. Resellers sell plastic M2M SIMs: Justworx R395 SIM + 10-100 MB/month plans; Brits Bros R533.50 once-off incl. 30 MB/month for 12 months. Onomondo and Things Mobile offer multi-network MFF2 for SA (USD, usage-based).",
+      "alternatives": [
+        {"supplier": "Brits Bros Parts (M2M roaming SIM, 12 months x 30 MB, plastic SIM)", "url": "https://britsbrosparts.co.za/product/m2m-iot-roaming-data-sim-card-for-gps-trackers-and-alarm-systems/", "unit_price_zar": 533.5, "status": "from-search-snippet; ~R44/month equivalent"},
+        {"supplier": "Justworx IoT SIM (via Electromann)", "url": "https://take.app/electromann/p/cm9wj28jz0009l104hqnpmmks", "unit_price_zar": 395.0, "status": "from-search-snippet; SIM price, plans extra"}
+      ]
+    },
+    {
+      "id": "vent", "name": "ePTFE pressure-equalising vent (Gore PolyVent Standard PMF100320)", "qty": 1, "sku": "both",
+      "supplier": "RS Components South Africa",
+      "url": "https://za.rs-online.com/web/p/enclosure-accessories/2821505",
+      "unit_price_zar": 131.83, "price_basis": "ex VAT, qty 1 (R151.60 inc)",
+      "status": "from-search-snippet",
+      "notes": "Screw-in type. Check that the thread suits the housing wall. M12x1 PMF100319 is about R142.11.",
+      "alternatives": [
+        {"supplier": "RS ZA (Gore M12x1.5 high airflow PMF100586)", "url": "https://za.rs-online.com/web/p/enclosure-ventilation/2821502", "unit_price_zar": 147.33, "status": "from-search-snippet"},
+        {"supplier": "DigiKey ZA (Amphenol LTW VENT-PS1NBK-N8001)", "url": "https://www.digikey.co.za/en/products/detail/amphenol-ltw/VENT-PS1NBK-N8001/7898283", "unit_price_zar": null, "status": "from-search-snippet; listed, price not shown"}
+      ]
+    },
+    {
+      "id": "security_screws", "name": "Stainless tamper-proof screws M4 (pin-hex button head, RS PRO)", "qty": 4, "sku": "both",
+      "supplier": "RS Components South Africa",
+      "url": "https://za.rs-online.com/web/p/security-screws/6212669",
+      "unit_price_zar": 5.45, "price_basis": "ex VAT, per screw; sold as bag of 100 (R545.45)",
+      "status": "from-search-snippet",
+      "notes": "This is pin-HEX, not pin-Torx. No M3/M4 stainless pin-Torx with a ZA price was found. A Belmetric pin-Torx button kit exists in M6+ only (about R32/screw). The RS ZA security-screw category lists pin-Torx, but the M3/M4 price was not captured.",
+      "alternatives": [
+        {"supplier": "RS ZA security screws category (pin Torx filter)", "url": "https://za.rs-online.com/web/c/fasteners-fixings/screws-bolts/security-screws/", "unit_price_zar": null, "status": "not-found"}
+      ]
+    },
+    {
+      "id": "oring", "name": "O-ring / lid gasket (silicone)", "qty": 1, "sku": "both",
+      "supplier": "Communica (CMU 200 pc silicone O-ring kit, 15 sizes)",
+      "url": "https://www.communica.co.za/products/cmu-200pc-o-ring-kit-15-sizes",
+      "unit_price_zar": 73.91, "price_basis": "ex VAT, per kit (R85 inc)",
+      "status": "from-search-snippet",
+      "notes": "Good for prototypes. For production, specify the cord section and ID to suit the lid groove.",
+      "alternatives": [
+        {"supplier": "RS ZA (RS PRO silicone O-ring 33x35 mm, bag of 25)", "url": "https://za.rs-online.com/web/p/gaskets-o-rings/2610021", "unit_price_zar": 7.26, "status": "from-search-snippet; R181.44 per bag"},
+        {"supplier": "RS ZA (5 mm silicone O-ring cord, 5 m)", "url": "https://za.rs-online.com/web/c/bearings-seals/gaskets-seals-packings/seal-o-ring-kits/", "unit_price_zar": 559.56, "status": "from-search-snippet"}
+      ]
+    },
+    {
+      "id": "pcb", "name": "PCB ~50x40 mm, 2- or 4-layer, small batch", "qty": 1, "sku": "both",
+      "supplier": "JLCPCB (ships to SA)",
+      "url": "https://jlcpcb.com/blog/4-free",
+      "unit_price_zar": 6.66, "price_basis": "per board; USD 2 for 5 pcs converted, excl. shipping and import VAT",
+      "status": "estimate",
+      "notes": "The $2/5 pcs offer covers 2-layer up to 100x100 mm and 4-layer up to 50x50 mm (green, 1 oz). Shipping to SA was not found. Forum reports suggest about USD 20-30 by DHL, or a cheaper Global Standard Direct Line option. Import VAT and clearance fees apply.",
+      "alternatives": [
+        {"supplier": "PCBWay (ships to SA)", "url": "https://www.pcbway.com", "unit_price_zar": 6.66, "status": "estimate; same ~USD 2/5 pcs entry pricing reported"},
+        {"supplier": "ICAPE Trax (Cape Town)", "url": "https://www.dataweek.co.za/20551r", "unit_price_zar": null, "status": "not-found; quote only, 3-day PTH prototypes"}
+      ]
+    },
+    {
+      "id": "housing_sls", "name": "Prototype housing SLS PA12 / PA12-GF (body, cap, lid, hook slider)", "qty": 4, "sku": "both",
+      "supplier": "Protolabs Network (Hubs) South Africa",
+      "url": "https://www.hubs.com/3d-printing/south-africa/",
+      "unit_price_zar": null, "price_basis": "instant quote requires CAD upload",
+      "status": "not-found",
+      "notes": "Hubs SA lists SLS PA12 and PA12-GF. No SA bureau publishes per-cm3 prices; 1159.co.za and Rapid3D offer SLS on quote. As a reference, JLC3DP MJF PA12 is USD 0.275/g (about R4.58/g, Aug 2025), excl. shipping. No GF grade was found at JLC3DP.",
+      "alternatives": [
+        {"supplier": "1159 (SA SLS service)", "url": "https://1159.co.za/pages/sls-3d-printing-services", "unit_price_zar": null, "status": "not-found; quote only"},
+        {"supplier": "JLC3DP MJF PA12 (per gram, ships to SA)", "url": "https://jlc3dp.com/blog/drastic-material-price-cuts-and-adjusted-post-processing-service-fees", "unit_price_zar": 4.58, "status": "from-search-snippet; per gram, USD 0.275 converted"}
+      ]
+    },
+    {
+      "id": "guard_bridge", "name": "Laser-cut mild steel guard bridge, 2 mm", "qty": 1, "sku": "both",
+      "supplier": "Boland Laser (online instant quote, ships)",
+      "url": "https://bolandlaser.co.za/",
+      "unit_price_zar": null, "price_basis": "quote from DXF",
+      "status": "not-found",
+      "notes": "No published per-part price. Other SA options: Staalbeer, Laser-It, Pharos Steel Works, Lasercore (quote forms).",
+      "alternatives": [
+        {"supplier": "Staalbeer", "url": "https://www.staalbeer.co.za/products/laser-cutting/", "unit_price_zar": null, "status": "not-found"},
+        {"supplier": "Laser-It", "url": "https://www.laser-it.co.za/", "unit_price_zar": null, "status": "not-found"}
+      ]
+    },
+    {
+      "id": "friction", "name": "High-friction contact surface (anti-slip tape, 50 mm x 5 m)", "qty": 1, "sku": "both",
+      "supplier": "Takealot",
+      "url": "https://www.takealot.com/anti-slip-tape-black/PLID46879637",
+      "unit_price_zar": 156.52, "price_basis": "R180 inc VAT per roll",
+      "status": "from-search-snippet",
+      "notes": "This is grit on a PVC base, not PU. No PU friction coating or PU tape with a ZA price was found.",
+      "alternatives": [
+        {"supplier": "Plasti-Dip rubber spray (bobshop, Autostyle Motorsport)", "url": "https://www.bobshop.co.za/plasti-dip-liquid-rubber-coating-spray-black/p/241778781", "unit_price_zar": 152.17, "status": "from-search-snippet; R175 inc VAT, rubber not PU"},
+        {"supplier": "Non-Slip.co.za (10 m roll)", "url": "https://www.non-slip.co.za/safety-tape/anti-slip-tape/", "unit_price_zar": 260.87, "status": "from-search-snippet; from R300 inc VAT"}
+      ]
+    },
+    {
+      "id": "conformal", "name": "Conformal coating spray (acrylic, ECS Plastic 70 400 ml)", "qty": 1, "sku": "both",
+      "supplier": "Communica",
+      "url": "https://www.communica.co.za/products/ecs-plastic-70-400ml",
+      "unit_price_zar": 220.0, "price_basis": "ex VAT, per can (R253 inc)",
+      "status": "from-search-snippet",
+      "notes": "",
+      "alternatives": [
+        {"supplier": "Mantech (Kontakt Plastik 70, 200 ml)", "url": "https://www.mantech.co.za/ProductInfo.aspx?Item=90M0039", "unit_price_zar": 197.71, "status": "from-search-snippet"},
+        {"supplier": "RS ZA (Electrolube acrylic 200 ml)", "url": "https://za.rs-online.com/web/c/facilities-cleaning-maintenance/electronics-cleaners-protective-coatings/conformal-coatings/", "unit_price_zar": 325.68, "status": "from-search-snippet"}
+      ]
+    }
+  ]
+}
